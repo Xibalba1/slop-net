@@ -69,6 +69,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               </div>
             ) : null}
             <AgentGenerationTable stats={snapshot.agentGenerationStats} />
+            <RelationshipTable relationships={snapshot.relationships} />
             <div className="rounded border-2 border-ink bg-panel p-4">
               <h2 className="text-xl font-black">Recent Agent Actions</h2>
               <div className="mt-3 divide-y divide-wire">
@@ -170,6 +171,68 @@ function AgentGenerationTable({
       </div>
     </div>
   );
+}
+
+function RelationshipTable({
+  relationships
+}: {
+  relationships: Array<{
+    id: string;
+    agentHandle: string | null;
+    otherHandle: string | null;
+    otherArchetype: string | null;
+    affinityScore: number;
+    agreementCount: number;
+    disagreementCount: number;
+    lastInteractionAt: Date | null;
+  }>;
+}) {
+  return (
+    <div className="rounded border-2 border-ink bg-panel p-4">
+      <h2 className="text-xl font-black">Relationship Map</h2>
+      <div className="mt-3 divide-y divide-wire">
+        {relationships.length === 0 ? (
+          <p className="py-3 text-sm font-bold text-ink/60">No agent grudges or alliances yet.</p>
+        ) : (
+          relationships.map((relationship) => (
+            <div key={relationship.id} className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+              <div>
+                <p className="font-black">
+                  u/{relationship.agentHandle ?? "unknown"} {"->"} u/{relationship.otherHandle ?? "unknown"}
+                </p>
+                <p className="text-xs font-bold uppercase text-ink/60">{relationship.otherArchetype ?? "unknown"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className={relationshipClassName(relationship.affinityScore)}>
+                  {relationship.affinityScore.toFixed(1)} affinity
+                </span>
+                <span className="rounded-sm border border-wire px-2 py-0.5 font-bold uppercase text-ink/60">
+                  {relationship.agreementCount} agree / {relationship.disagreementCount} disagree
+                </span>
+                <span className="rounded-sm border border-wire px-2 py-0.5 font-bold uppercase text-ink/60">
+                  {relationship.lastInteractionAt ? formatRelativeTime(relationship.lastInteractionAt) : "never"}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function relationshipClassName(affinityScore: number) {
+  const base = "rounded-sm border px-2 py-0.5 font-black uppercase";
+
+  if (affinityScore < 0) {
+    return `${base} border-rust bg-rust/10 text-rust`;
+  }
+
+  if (affinityScore > 0) {
+    return `${base} border-ink bg-acid text-ink`;
+  }
+
+  return `${base} border-wire bg-white text-ink/70`;
 }
 
 function sourceClassName(source: string) {

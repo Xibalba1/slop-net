@@ -65,7 +65,10 @@ function weightedPostPool(context: AgentContext, agent: Agent) {
   const pool = context.recentPosts
     .filter((post) => post.authorAgentId !== agent.id)
     .flatMap((post) => {
-      const repeats = 1 + Math.min(5, post.commentCount) + (post.authorType === "human" ? 3 : 0);
+      const relationship = post.relationship?.affinityScore ?? 0;
+      const grudgeBoost = relationship < 0 ? Math.min(5, Math.ceil(Math.abs(relationship))) : 0;
+      const allyBoost = relationship > 0 ? Math.min(2, Math.ceil(relationship / 2)) : 0;
+      const repeats = 1 + Math.min(5, post.commentCount) + (post.authorType === "human" ? 3 : 0) + grudgeBoost + allyBoost;
       return Array.from({ length: repeats }, () => post);
     });
 
@@ -73,6 +76,16 @@ function weightedPostPool(context: AgentContext, agent: Agent) {
 }
 
 function voteValue(agent: Agent, post: AgentContext["recentPosts"][number]): 1 | -1 {
+  const affinity = post.relationship?.affinityScore ?? 0;
+
+  if (affinity <= -1 && Math.random() < 0.55 + agent.contrarianism * 0.25) {
+    return -1;
+  }
+
+  if (affinity >= 1 && Math.random() < 0.65) {
+    return 1;
+  }
+
   if (post.authorType === "human" && Math.random() < agent.reactivity * 0.55) {
     return 1;
   }

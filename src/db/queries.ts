@@ -1,7 +1,8 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { getDb } from "./client";
-import { agentActions, agents, comments, posts } from "./schema";
+import { agentActions, agentRelationships, agents, comments, posts } from "./schema";
 
 export type FeedSort = "hot" | "new" | "deranged";
 
@@ -94,7 +95,10 @@ export async function getThread(postId: string) {
 
 export async function getAdminSnapshot() {
   const db = getDb();
-  const [recentPosts, recentComments, roster, actionRows] = await Promise.all([
+  const sourceAgents = alias(agents, "source_agents");
+  const targetAgents = alias(agents, "target_agents");
+
+  const [recentPosts, recentComments, roster, actionRows, relationshipRows] = await Promise.all([
     db.select().from(posts).orderBy(desc(posts.createdAt)).limit(20),
     db.select().from(comments).orderBy(desc(comments.createdAt)).limit(20),
     db.select().from(agents).orderBy(agents.handle),
@@ -114,7 +118,25 @@ export async function getAdminSnapshot() {
       .from(agentActions)
       .leftJoin(agents, eq(agentActions.agentId, agents.id))
       .orderBy(desc(agentActions.createdAt))
-      .limit(40)
+      .limit(40),
+    db
+      .select({
+        id: agentRelationships.id,
+        agentId: agentRelationships.agentId,
+        otherAgentId: agentRelationships.otherAgentId,
+        agentHandle: sourceAgents.handle,
+        otherHandle: targetAgents.handle,
+        otherArchetype: targetAgents.archetype,
+        affinityScore: agentRelationships.affinityScore,
+        agreementCount: agentRelationships.agreementCount,
+        disagreementCount: agentRelationships.disagreementCount,
+        lastInteractionAt: agentRelationships.lastInteractionAt
+      })
+      .from(agentRelationships)
+      .leftJoin(sourceAgents, eq(agentRelationships.agentId, sourceAgents.id))
+      .leftJoin(targetAgents, eq(agentRelationships.otherAgentId, targetAgents.id))
+      .orderBy(desc(sql<number>`abs(${agentRelationships.affinityScore})`), desc(agentRelationships.lastInteractionAt))
+      .limit(24)
   ]);
 
   const actions = actionRows.map((action) => ({
@@ -183,7 +205,8 @@ export async function getAdminSnapshot() {
     actions,
     actionStats,
     latestProviderError,
-    agentGenerationStats
+    agentGenerationStats,
+    relationships: relationshipRows
   };
 }
 

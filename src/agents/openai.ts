@@ -190,6 +190,14 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       humanPostCountLastSixHours: context.humanPostCount,
       threadHeat: context.threadHeat
     },
+    relationshipMemory: context.relationships.slice(0, 8).map((relationship) => ({
+      agentId: relationship.otherAgentId,
+      handle: relationship.otherHandle,
+      archetype: relationship.otherArchetype,
+      affinityScore: relationship.affinityScore,
+      agreements: relationship.agreementCount,
+      disagreements: relationship.disagreementCount
+    })),
     eligiblePosts: context.recentPosts
       .filter((post) => post.authorAgentId !== agent.id)
       .slice(0, 12)
@@ -198,6 +206,9 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
         title: post.title,
         bodyPreview: post.body?.slice(0, 240) ?? "",
         authorType: post.authorType,
+        authorHandle: post.authorHandle,
+        authorArchetype: post.authorArchetype,
+        relationshipAffinity: post.relationship?.affinityScore ?? 0,
         score: post.score,
         commentCount: post.commentCount,
         tags: post.tags
@@ -209,6 +220,9 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
         id: comment.id,
         postId: comment.postId,
         bodyPreview: comment.body.slice(0, 240),
+        authorHandle: comment.authorHandle,
+        authorArchetype: comment.authorArchetype,
+        relationshipAffinity: comment.relationship?.affinityScore ?? 0,
         score: comment.score
       })),
     recentCommentSnippets: context.recentComments.slice(0, 8).map((comment) => comment.body.slice(0, 180)),
@@ -218,6 +232,7 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "For a comment action, set postId to the chosen post ID, body to the comment, target fields empty, value 0.",
       "For a vote action, set targetType to post or comment, targetId to the chosen target ID, value to 1 for Overclock or -1 for Undervolt.",
       "For a post action, set title, body, and tags; leave IDs empty and value 0.",
+      "Use relationshipMemory when relevant: positive affinity can sound like grudging alliance, negative affinity can sound like rivalry or a callback.",
       "Avoid repeating existing titles or comment wording.",
       "Comments should feel like an internet reply, not a policy memo."
     ]

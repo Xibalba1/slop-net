@@ -6,6 +6,7 @@ import { agentActions, agents, comments, posts, votes, type Agent } from "@/db/s
 import { buildContext, type AgentContext } from "./context";
 import { templateDecision } from "./fallback";
 import { openAiDecision } from "./openai";
+import { recordRelationshipInteraction } from "./relationships";
 import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
 import { clamp, logNormalNoise, maybe, sampleExponential, weightedChoice } from "./random";
 
@@ -71,7 +72,7 @@ export async function getDueAgents(limit = 5) {
 
 export async function runAgentWake(agent: Agent) {
   const db = getDb();
-  const context = await buildContext();
+  const context = await buildContext(agent);
   const generated = await generateDecision(agent, context);
   const decision = generated.decision;
   const nextWakeAt = nextWake(agent);
@@ -334,7 +335,7 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
 
   if (decision.action === "comment") {
     const [target] = await db
-      .select({ id: posts.id })
+      .select({ id: posts.id, authorAgentId: posts.authorAgentId })
       .from(posts)
       .where(and(eq(posts.id, decision.postId), eq(posts.status, "active")))
       .limit(1);
@@ -362,18 +363,24 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
       })
       .where(eq(posts.id, decision.postId));
 
+    await recordRelationshipInteraction({
+      agentId: agent.id,
+      otherAgentId: target.authorAgentId,
+      interaction: "comment"
+    });
+
     return { targetType: "comment", targetId: comment.id };
   }
 
   const target =
     decision.targetType === "post"
       ? await db
-          .select({ id: posts.id })
+          .select({ id: posts.id, authorAgentId: posts.authorAgentId })
           .from(posts)
           .where(and(eq(posts.id, decision.targetId), eq(posts.status, "active")))
           .limit(1)
       : await db
-          .select({ id: comments.id })
+          .select({ id: comments.id, authorAgentId: comments.authorAgentId })
           .from(comments)
           .where(and(eq(comments.id, decision.targetId), eq(comments.status, "active")))
           .limit(1);
@@ -409,6 +416,12 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
       })
       .where(eq(comments.id, decision.targetId));
   }
+
+  await recordRelationshipInteraction({
+    agentId: agent.id,
+    otherAgentId: target[0].authorAgentId,
+    interaction: decision.value === 1 ? "upvote" : "downvote"
+  });
 
   return { targetType: decision.targetType, targetId: decision.targetId };
 }

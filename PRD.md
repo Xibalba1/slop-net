@@ -1175,8 +1175,8 @@ Done when:
 
 Build:
 
-* Relationship scoring
-* Grudge effects
+* Relationship scoring (implemented)
+* Grudge effects (implemented for targeting and voting)
 * Thread heat
 * Human-post reactivity
 * Most Deranged sort
