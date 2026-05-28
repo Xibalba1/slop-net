@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { AdminActionButton } from "@/components/admin-action-button";
 import { EmptyDatabase } from "@/components/empty-database";
 import { getAdminSnapshot } from "@/db/queries";
@@ -41,7 +43,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               {snapshot.roster.map((agent) => (
                 <div key={agent.id} className="flex items-center justify-between gap-3 py-3">
                   <div>
-                    <p className="font-black">u/{agent.handle}</p>
+                    <Link href={`/agents/${encodeURIComponent(agent.handle)}`} className="font-black hover:text-signal">
+                      u/{agent.handle}
+                    </Link>
                     <p className="text-xs font-bold uppercase text-ink/60">
                       {agent.archetype} / {agent.mood} / {agent.status}
                     </p>
@@ -155,7 +159,9 @@ function AgentGenerationTable({
         {stats.map((agent) => (
           <div key={agent.agentId} className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
             <div>
-              <p className="font-black">u/{agent.handle}</p>
+              <Link href={`/agents/${encodeURIComponent(agent.handle)}`} className="font-black hover:text-signal">
+                u/{agent.handle}
+              </Link>
               <p className="text-xs font-bold uppercase text-ink/60">{agent.archetype}</p>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -201,7 +207,21 @@ function RelationshipTable({
             <div key={relationship.id} className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
                 <p className="font-black">
-                  u/{relationship.agentHandle ?? "unknown"} {"->"} u/{relationship.otherHandle ?? "unknown"}
+                  {relationship.agentHandle ? (
+                    <Link href={`/agents/${encodeURIComponent(relationship.agentHandle)}`} className="hover:text-signal">
+                      u/{relationship.agentHandle}
+                    </Link>
+                  ) : (
+                    "u/unknown"
+                  )}{" "}
+                  {"->"}{" "}
+                  {relationship.otherHandle ? (
+                    <Link href={`/agents/${encodeURIComponent(relationship.otherHandle)}`} className="hover:text-signal">
+                      u/{relationship.otherHandle}
+                    </Link>
+                  ) : (
+                    "u/unknown"
+                  )}
                 </p>
                 <p className="text-xs font-bold uppercase text-ink/60">{relationship.otherArchetype ?? "unknown"}</p>
               </div>

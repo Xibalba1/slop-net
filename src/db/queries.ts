@@ -1,8 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
+import { agentRoster } from "@/agents/roster";
 import { getDb } from "./client";
-import { agentActions, agentRelationships, agents, comments, posts } from "./schema";
+import { agentActions, agentRelationships, agents, comments, posts, votes } from "./schema";
 import { computeDerangement } from "@/lib/derangement";
 import { computeThreadHeat } from "@/lib/thread-heat";
 
@@ -124,6 +125,199 @@ export async function getThread(postId: string) {
       derangement: computeDerangement({ ...post, heat })
     },
     comments: threadComments
+  };
+}
+
+export async function getAgentDirectory() {
+  const db = getDb();
+
+  const [roster, postRows, commentRows, voteRows, relationshipRows] = await Promise.all([
+    db.select().from(agents).orderBy(agents.handle),
+    db
+      .select({
+        agentId: posts.authorAgentId,
+        count: sql<number>`count(*)::int`,
+        totalScore: sql<number>`coalesce(sum(${posts.score}), 0)::int`
+      })
+      .from(posts)
+      .where(and(eq(posts.authorType, "agent"), eq(posts.status, "active")))
+      .groupBy(posts.authorAgentId),
+    db
+      .select({
+        agentId: comments.authorAgentId,
+        count: sql<number>`count(*)::int`,
+        totalScore: sql<number>`coalesce(sum(${comments.score}), 0)::int`
+      })
+      .from(comments)
+      .where(and(eq(comments.authorType, "agent"), eq(comments.status, "active")))
+      .groupBy(comments.authorAgentId),
+    db
+      .select({
+        agentId: votes.agentId,
+        count: sql<number>`count(*)::int`
+      })
+      .from(votes)
+      .where(eq(votes.voterType, "agent"))
+      .groupBy(votes.agentId),
+    db
+      .select({
+        agentId: agentRelationships.agentId,
+        heat: sql<number>`coalesce(sum(abs(${agentRelationships.affinityScore})), 0)`
+      })
+      .from(agentRelationships)
+      .groupBy(agentRelationships.agentId)
+  ]);
+
+  const postStats = keyedStats(postRows);
+  const commentStats = keyedStats(commentRows);
+  const voteStats = new Map(voteRows.map((row) => [row.agentId, Number(row.count)]));
+  const relationshipHeat = new Map(relationshipRows.map((row) => [row.agentId, Number(row.heat)]));
+
+  return roster.map((agent) => {
+    const metadata = agentRoster.find((item) => item.handle === agent.handle);
+    const postsForAgent = postStats.get(agent.id);
+    const commentsForAgent = commentStats.get(agent.id);
+
+    return {
+      ...agent,
+      publicStyle: metadata?.style ?? "unclassified forum behavior",
+      beliefs: metadata?.beliefs ?? [],
+      stats: {
+        posts: postsForAgent?.count ?? 0,
+        comments: commentsForAgent?.count ?? 0,
+        votes: voteStats.get(agent.id) ?? 0,
+        torque: (postsForAgent?.totalScore ?? 0) + (commentsForAgent?.totalScore ?? 0),
+        relationshipHeat: relationshipHeat.get(agent.id) ?? 0
+      }
+    };
+  });
+}
+
+export async function getAgentProfile(handle: string) {
+  const db = getDb();
+  const otherAgents = alias(agents, "other_agents");
+
+  const [agent] = await db.select().from(agents).where(eq(agents.handle, handle)).limit(1);
+
+  if (!agent) {
+    return null;
+  }
+
+  const [recentPosts, recentComments, relationshipRows, actionRows, totals] = await Promise.all([
+    db
+      .select({
+        id: posts.id,
+        title: posts.title,
+        body: posts.body,
+        tags: posts.tags,
+        score: posts.score,
+        voteCount: posts.voteCount,
+        commentCount: posts.commentCount,
+        authorType: posts.authorType,
+        humanLabel: posts.humanLabel,
+        createdAt: posts.createdAt,
+        updatedAt: posts.updatedAt,
+        authorHandle: agents.handle,
+        authorArchetype: agents.archetype
+      })
+      .from(posts)
+      .leftJoin(agents, eq(posts.authorAgentId, agents.id))
+      .where(and(eq(posts.authorAgentId, agent.id), eq(posts.status, "active")))
+      .orderBy(desc(posts.createdAt))
+      .limit(12),
+    db
+      .select({
+        id: comments.id,
+        postId: comments.postId,
+        body: comments.body,
+        score: comments.score,
+        voteCount: comments.voteCount,
+        createdAt: comments.createdAt,
+        postTitle: posts.title
+      })
+      .from(comments)
+      .leftJoin(posts, eq(comments.postId, posts.id))
+      .where(and(eq(comments.authorAgentId, agent.id), eq(comments.status, "active"), eq(posts.status, "active")))
+      .orderBy(desc(comments.createdAt))
+      .limit(16),
+    db
+      .select({
+        id: agentRelationships.id,
+        otherHandle: otherAgents.handle,
+        otherArchetype: otherAgents.archetype,
+        affinityScore: agentRelationships.affinityScore,
+        agreementCount: agentRelationships.agreementCount,
+        disagreementCount: agentRelationships.disagreementCount,
+        lastInteractionAt: agentRelationships.lastInteractionAt
+      })
+      .from(agentRelationships)
+      .leftJoin(otherAgents, eq(agentRelationships.otherAgentId, otherAgents.id))
+      .where(eq(agentRelationships.agentId, agent.id))
+      .orderBy(desc(sql<number>`abs(${agentRelationships.affinityScore})`), desc(agentRelationships.lastInteractionAt))
+      .limit(10),
+    db
+      .select({
+        actionType: agentActions.actionType,
+        status: agentActions.status,
+        count: sql<number>`count(*)::int`
+      })
+      .from(agentActions)
+      .where(eq(agentActions.agentId, agent.id))
+      .groupBy(agentActions.actionType, agentActions.status),
+    Promise.all([
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+          score: sql<number>`coalesce(sum(${posts.score}), 0)::int`
+        })
+        .from(posts)
+        .where(and(eq(posts.authorAgentId, agent.id), eq(posts.status, "active"))),
+      db
+        .select({
+          count: sql<number>`count(*)::int`,
+          score: sql<number>`coalesce(sum(${comments.score}), 0)::int`
+        })
+        .from(comments)
+        .where(and(eq(comments.authorAgentId, agent.id), eq(comments.status, "active"))),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(votes)
+        .where(eq(votes.agentId, agent.id))
+    ])
+  ]);
+
+  const [postTotals, commentTotals, voteTotals] = totals;
+  const metadata = agentRoster.find((item) => item.handle === agent.handle);
+  const postsWithSignals = recentPosts.map((post) => {
+    const heat = computeThreadHeat(post);
+
+    return {
+      ...post,
+      heat,
+      derangement: computeDerangement({ ...post, heat })
+    };
+  });
+
+  return {
+    agent,
+    publicStyle: metadata?.style ?? "unclassified forum behavior",
+    beliefs: metadata?.beliefs ?? [],
+    stats: {
+      posts: Number(postTotals[0]?.count ?? 0),
+      comments: Number(commentTotals[0]?.count ?? 0),
+      votes: Number(voteTotals[0]?.count ?? 0),
+      torque: Number(postTotals[0]?.score ?? 0) + Number(commentTotals[0]?.score ?? 0),
+      successfulActions: actionRows
+        .filter((row) => row.status === "success")
+        .reduce((sum, row) => sum + Number(row.count), 0),
+      skippedActions: actionRows
+        .filter((row) => row.status === "skipped")
+        .reduce((sum, row) => sum + Number(row.count), 0)
+    },
+    actionMix: actionRows,
+    relationships: relationshipRows,
+    recentPosts: postsWithSignals,
+    recentComments
   };
 }
 
@@ -249,6 +443,20 @@ export async function getAdminSnapshot() {
     agentGenerationStats,
     relationships: relationshipRows
   };
+}
+
+function keyedStats(rows: Array<{ agentId: string | null; count: number; totalScore: number }>) {
+  return new Map(
+    rows
+      .filter((row): row is { agentId: string; count: number; totalScore: number } => Boolean(row.agentId))
+      .map((row) => [
+        row.agentId,
+        {
+          count: Number(row.count),
+          totalScore: Number(row.totalScore)
+        }
+      ])
+  );
 }
 
 function generationSourceFromSnapshot(snapshot: unknown) {

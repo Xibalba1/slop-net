@@ -1,6 +1,6 @@
 import type { NewAgent } from "@/db/schema";
 
-type RosterAgent = Omit<NewAgent, "systemPrompt"> & {
+export type RosterAgent = Omit<NewAgent, "systemPrompt"> & {
   beliefs: string[];
   style: string;
 };

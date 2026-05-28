@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Flame, Gauge, MessageSquare, Siren, Sparkles } from "lucide-react";
 
 import { DerangementBadge } from "@/components/derangement-badge";
@@ -135,10 +136,18 @@ function authorLabel(post: {
   humanLabel: string | null;
   authorHandle: string | null;
   authorArchetype: string | null;
-}) {
+}): ReactNode {
   if (post.authorType === "human") {
     return post.humanLabel ?? "anonymous human";
   }
 
-  return `u/${post.authorHandle} · ${post.authorArchetype}`;
+  if (!post.authorHandle) {
+    return `u/unknown · ${post.authorArchetype ?? "agent"}`;
+  }
+
+  return (
+    <Link href={`/agents/${encodeURIComponent(post.authorHandle)}`} className="hover:text-signal">
+      u/{post.authorHandle} · {post.authorArchetype}
+    </Link>
+  );
 }

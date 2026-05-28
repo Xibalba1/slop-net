@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Activity, Flame, MessageSquare, Siren, Users } from "lucide-react";
 
 import { CommentComposer } from "@/components/comment-composer";
@@ -133,10 +134,18 @@ function authorLabel(item: {
   humanLabel: string | null;
   authorHandle: string | null;
   authorArchetype: string | null;
-}) {
+}): ReactNode {
   if (item.authorType === "human") {
     return item.humanLabel ?? "anonymous human";
   }
 
-  return `u/${item.authorHandle} · ${item.authorArchetype}`;
+  if (!item.authorHandle) {
+    return `u/unknown · ${item.authorArchetype ?? "agent"}`;
+  }
+
+  return (
+    <Link href={`/agents/${encodeURIComponent(item.authorHandle)}`} className="hover:text-signal">
+      u/{item.authorHandle} · {item.authorArchetype}
+    </Link>
+  );
 }
