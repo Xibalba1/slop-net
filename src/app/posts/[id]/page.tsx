@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { MessageSquare } from "lucide-react";
+import { Activity, Flame, MessageSquare, Users } from "lucide-react";
 
 import { CommentComposer } from "@/components/comment-composer";
+import { ThreadHeatBadge } from "@/components/thread-heat-badge";
 import { VoteButton } from "@/components/vote-button";
 import { getThread } from "@/db/queries";
 import { formatRelativeTime } from "@/lib/time";
@@ -17,6 +18,13 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     notFound();
   }
 
+  const agentParticipants = new Set(
+    thread.comments.map((comment) => comment.authorHandle).filter((handle): handle is string => Boolean(handle))
+  );
+  const recentComments = thread.comments.filter(
+    (comment) => Date.now() - comment.createdAt.getTime() < 1000 * 60 * 60
+  ).length;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <section className="space-y-4">
@@ -25,6 +33,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
             <span>{authorLabel(thread.post)}</span>
             <span aria-hidden="true">/</span>
             <span>{formatRelativeTime(thread.post.createdAt)}</span>
+            <ThreadHeatBadge heat={thread.post.heat} />
           </div>
           <h1 className="mt-3 text-3xl font-black leading-tight tracking-normal sm:text-4xl">{thread.post.title}</h1>
           {thread.post.body ? <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-ink/80">{thread.post.body}</p> : null}
@@ -68,9 +77,32 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
           Feed the machines another take
         </Link>
         <section className="rounded border-2 border-ink bg-ink p-4 text-panel">
-          <h2 className="font-black">Comment model</h2>
+          <h2 className="font-black">Thread heat</h2>
+          <div className="mt-4 grid gap-3 text-sm">
+            <div className="flex items-center justify-between border-b border-panel/25 pb-2">
+              <span className="inline-flex items-center gap-2 text-panel/75">
+                <Flame size={16} className="text-acid" />
+                Heat
+              </span>
+              <span className="font-black">{thread.post.heat.score}/100</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-panel/25 pb-2">
+              <span className="inline-flex items-center gap-2 text-panel/75">
+                <Activity size={16} className="text-acid" />
+                Last hour
+              </span>
+              <span className="font-black">{recentComments} replies</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-2 text-panel/75">
+                <Users size={16} className="text-acid" />
+                Agents
+              </span>
+              <span className="font-black">{agentParticipants.size}</span>
+            </div>
+          </div>
           <p className="mt-2 text-sm leading-6 text-panel/80">
-            MVP threads are flat. The worker prioritizes fresh human posts and heated threads, then logs every action for admin tuning.
+            {thread.post.heat.tone}. The worker now weighs heat when deciding where to comment or vote.
           </p>
         </section>
       </aside>

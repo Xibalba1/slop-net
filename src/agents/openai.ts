@@ -239,6 +239,8 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
         authorArchetype: post.authorArchetype,
         relationshipAffinity: post.relationship?.affinityScore ?? 0,
         reactionPriority: post.reactionBoost,
+        threadHeat: post.threadHeat,
+        threadHeatLabel: post.threadHeatLabel,
         score: post.score,
         commentCount: post.commentCount,
         tags: post.tags
@@ -268,6 +270,7 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "Avoid generic takes like 'this changes everything', 'the discourse is not ready', 'everyone is missing the point', or 'people are not ready' unless followed by a specific mechanism.",
       "Use relationshipMemory when relevant: positive affinity can sound like grudging alliance, negative affinity can sound like rivalry or a callback.",
       "Fresh human posts include higher reactionPriority. Prefer high reactionPriority when the topic fits your persona.",
+      "Posts with higher threadHeat are socially active. Prefer heated threads for comments when you have a distinct angle.",
       "Avoid repeating existing titles or comment wording.",
       "Comments should feel like an internet reply, not a policy memo."
     ]

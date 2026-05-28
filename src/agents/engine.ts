@@ -21,6 +21,10 @@ const knownTags = new Set([
   "regulation",
   "synthetic media",
   "prompt engineering",
+  "labor",
+  "authenticity",
+  "trust",
+  "access",
   "slop",
   "discourse"
 ]);
@@ -297,7 +301,8 @@ function computeActionChance(agent: Agent, context: AgentContext) {
 }
 
 function chooseActionType(agent: Agent, context: AgentContext): ActionType {
-  const replyPressure = context.recentPosts.length > 0 ? 1 + context.humanPostCount * 0.2 : 0;
+  const heatPressure = Math.min(context.threadHeat * 0.28, 0.7);
+  const replyPressure = context.recentPosts.length > 0 ? 1 + context.humanPostCount * 0.2 + heatPressure : 0;
   const votePressure = context.recentPosts.length > 0 ? 1.1 : 0;
   const postPressure = context.recentPosts.length < 8 ? 1.4 : 0.75;
 

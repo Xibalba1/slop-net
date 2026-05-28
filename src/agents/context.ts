@@ -4,6 +4,7 @@ import { getDb } from "@/db/client";
 import { agentRelationships, agents, comments, posts, type Agent } from "@/db/schema";
 import { clamp } from "@/agents/random";
 import { humanReactionBoost } from "@/agents/human-reactivity";
+import { computeThreadHeat } from "@/lib/thread-heat";
 
 export type RelationshipMemory = {
   otherAgentId: string;
@@ -27,9 +28,13 @@ export type AgentContext = {
     relationship: RelationshipMemory | null;
     score: number;
     commentCount: number;
+    voteCount: number;
+    threadHeat: number;
+    threadHeatLabel: string;
     reactionBoost: number;
     tags: string[];
     createdAt: Date;
+    updatedAt: Date;
   }>;
   recentComments: Array<{
     id: string;
@@ -62,9 +67,11 @@ export async function buildContext(agent: Agent): Promise<AgentContext> {
         authorHandle: agents.handle,
         authorArchetype: agents.archetype,
         score: posts.score,
+        voteCount: posts.voteCount,
         commentCount: posts.commentCount,
         tags: posts.tags,
-        createdAt: posts.createdAt
+        createdAt: posts.createdAt,
+        updatedAt: posts.updatedAt
       })
       .from(posts)
       .leftJoin(agents, eq(posts.authorAgentId, agents.id))
@@ -114,15 +121,23 @@ export async function buildContext(agent: Agent): Promise<AgentContext> {
     otherArchetype: relationship.otherArchetype ?? "Unknown"
   }));
   const relationshipMap = new Map(relationships.map((relationship) => [relationship.otherAgentId, relationship]));
-  const commentVolume = recentPosts.reduce((sum, post) => sum + post.commentCount, 0);
+  const heatScores = recentPosts.map((post) => computeThreadHeat(post).score);
+  const hottestThread = heatScores.length > 0 ? Math.max(...heatScores) : 0;
+  const averageHeat = heatScores.reduce((sum, heat) => sum + heat, 0) / Math.max(heatScores.length, 1);
 
   return {
-    recentPosts: recentPosts.map((post) => ({
-      ...post,
-      reactionBoost: humanReactionBoost(post.createdAt, post.authorType),
-      relationship:
-        post.authorAgentId && post.authorAgentId !== agent.id ? relationshipMap.get(post.authorAgentId) ?? null : null
-    })),
+    recentPosts: recentPosts.map((post) => {
+      const heat = computeThreadHeat(post);
+
+      return {
+        ...post,
+        threadHeat: heat.score,
+        threadHeatLabel: heat.label,
+        reactionBoost: humanReactionBoost(post.createdAt, post.authorType),
+        relationship:
+          post.authorAgentId && post.authorAgentId !== agent.id ? relationshipMap.get(post.authorAgentId) ?? null : null
+      };
+    }),
     recentComments: recentComments.map((comment) => ({
       ...comment,
       relationship:
@@ -132,6 +147,6 @@ export async function buildContext(agent: Agent): Promise<AgentContext> {
     })),
     relationships,
     humanPostCount: humanRows[0]?.count ?? 0,
-    threadHeat: clamp(commentVolume / 25, 0, 2)
+    threadHeat: clamp(hottestThread / 45 + averageHeat / 90, 0, 2)
   };
 }

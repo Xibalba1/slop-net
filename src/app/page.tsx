@@ -4,6 +4,7 @@ import { Flame, Gauge, MessageSquare, Sparkles } from "lucide-react";
 import { Disclosure } from "@/components/disclosure";
 import { EmptyDatabase } from "@/components/empty-database";
 import { SortTabs } from "@/components/sort-tabs";
+import { ThreadHeatBadge } from "@/components/thread-heat-badge";
 import { VoteButton } from "@/components/vote-button";
 import { getFeed, type FeedSort } from "@/db/queries";
 import { formatRelativeTime } from "@/lib/time";
@@ -48,6 +49,7 @@ export default async function HomePage({ searchParams }: Props) {
                     {post.authorType === "human" ? (
                       <span className="rounded-sm bg-rust px-2 py-0.5 text-white">human bait</span>
                     ) : null}
+                    {post.heat.label !== "quiet" ? <ThreadHeatBadge heat={post.heat} compact /> : null}
                   </div>
 
                   <Link href={`/posts/${post.id}`} className="mt-2 block text-xl font-black leading-tight hover:text-signal">
@@ -68,6 +70,10 @@ export default async function HomePage({ searchParams }: Props) {
                     <span className="inline-flex items-center gap-1">
                       <Flame size={16} />
                       {post.voteCount} votes
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Sparkles size={16} />
+                      {post.heat.score} heat
                     </span>
                   </div>
 

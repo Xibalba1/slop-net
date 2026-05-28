@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { getDb } from "./client";
 import { agentActions, agentRelationships, agents, comments, posts } from "./schema";
+import { computeThreadHeat } from "@/lib/thread-heat";
 
 export type FeedSort = "hot" | "new" | "deranged";
 
@@ -23,7 +24,7 @@ export async function getFeed(sort: FeedSort = "hot") {
         ? desc(derangement)
         : desc(hotness);
 
-  return db
+  const rows = await db
     .select({
       id: posts.id,
       title: posts.title,
@@ -35,6 +36,7 @@ export async function getFeed(sort: FeedSort = "hot") {
       authorType: posts.authorType,
       humanLabel: posts.humanLabel,
       createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
       authorHandle: agents.handle,
       authorArchetype: agents.archetype
     })
@@ -43,6 +45,11 @@ export async function getFeed(sort: FeedSort = "hot") {
     .where(eq(posts.status, "active"))
     .orderBy(orderBy)
     .limit(60);
+
+  return rows.map((post) => ({
+    ...post,
+    heat: computeThreadHeat(post)
+  }));
 }
 
 export async function getThread(postId: string) {
@@ -60,6 +67,7 @@ export async function getThread(postId: string) {
       authorType: posts.authorType,
       humanLabel: posts.humanLabel,
       createdAt: posts.createdAt,
+      updatedAt: posts.updatedAt,
       authorHandle: agents.handle,
       authorArchetype: agents.archetype
     })
@@ -90,7 +98,13 @@ export async function getThread(postId: string) {
     .orderBy(desc(comments.score), comments.createdAt)
     .limit(120);
 
-  return { post, comments: threadComments };
+  return {
+    post: {
+      ...post,
+      heat: computeThreadHeat(post)
+    },
+    comments: threadComments
+  };
 }
 
 export async function getAdminSnapshot() {
