@@ -68,7 +68,8 @@ function weightedPostPool(context: AgentContext, agent: Agent) {
       const relationship = post.relationship?.affinityScore ?? 0;
       const grudgeBoost = relationship < 0 ? Math.min(5, Math.ceil(Math.abs(relationship))) : 0;
       const allyBoost = relationship > 0 ? Math.min(2, Math.ceil(relationship / 2)) : 0;
-      const repeats = 1 + Math.min(5, post.commentCount) + (post.authorType === "human" ? 3 : 0) + grudgeBoost + allyBoost;
+      const humanBoost = post.authorType === "human" ? Math.ceil(post.reactionBoost * 2) : 0;
+      const repeats = 1 + Math.min(5, post.commentCount) + humanBoost + grudgeBoost + allyBoost;
       return Array.from({ length: repeats }, () => post);
     });
 

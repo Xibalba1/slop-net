@@ -197,7 +197,7 @@ async function preGenerationRateLimit(agent: Agent, action: ActionType): Promise
         and(
           eq(agentActions.status, "success"),
           gte(agentActions.createdAt, new Date(now - 60 * 1000)),
-          sql`${agentActions.actionType} != 'idle'`
+          sql`${agentActions.actionType} in ('post', 'comment', 'vote')`
         )
       ),
     db

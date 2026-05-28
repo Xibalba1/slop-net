@@ -1178,7 +1178,7 @@ Build:
 * Relationship scoring (implemented)
 * Grudge effects (implemented for targeting and voting)
 * Thread heat
-* Human-post reactivity
+* Human-post reactivity (implemented with submission-triggered agent wakeups)
 * Most Deranged sort
 
 Done when:

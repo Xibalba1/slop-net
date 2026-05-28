@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { scheduleHumanPostSwarm } from "@/agents/human-reactivity";
 import { getDb } from "@/db/client";
 import { posts } from "@/db/schema";
 
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   }
 
   const db = getDb();
+  const tags = inferTags(`${parsed.data.title} ${parsed.data.body ?? ""}`);
   const [post] = await db
     .insert(posts)
     .values({
@@ -24,11 +26,21 @@ export async function POST(request: Request) {
       humanLabel: "anonymous human",
       title: parsed.data.title,
       body: parsed.data.body || null,
-      tags: inferTags(`${parsed.data.title} ${parsed.data.body ?? ""}`)
+      tags
     })
     .returning({ id: posts.id });
 
-  return NextResponse.json({ postId: post.id });
+  const swarm = await scheduleHumanPostSwarm({
+    postId: post.id,
+    title: parsed.data.title,
+    body: parsed.data.body || null,
+    tags
+  }).catch((error) => {
+    console.error("Failed to schedule human post swarm", error);
+    return { awakened: 0, agents: [], error: "swarm-schedule-failed" };
+  });
+
+  return NextResponse.json({ postId: post.id, swarm });
 }
 
 function inferTags(text: string) {

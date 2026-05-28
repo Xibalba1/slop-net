@@ -57,11 +57,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
               <Metric label="OpenAI calls" value={snapshot.actionStats.openai} />
               <Metric label="Fallbacks" value={snapshot.actionStats.template} />
               <Metric label="Provider errors" value={snapshot.actionStats.withErrors} />
               <Metric label="Cooldown skips" value={snapshot.actionStats.rateLimited} />
+              <Metric label="Swarm wakeups" value={snapshot.actionStats.swarmWakeups} />
             </div>
             {snapshot.latestProviderError ? (
               <div className="rounded border-2 border-rust bg-rust/10 p-3 text-xs font-bold text-rust">
@@ -140,6 +141,7 @@ function AgentGenerationTable({
     archetype: string;
     openai: number;
     template: number;
+    system: number;
     unknown: number;
     errors: number;
     skipped: number;
@@ -159,6 +161,7 @@ function AgentGenerationTable({
             <div className="flex flex-wrap gap-2 text-xs">
               <span className={sourceClassName("openai")}>{agent.openai} openai</span>
               <span className={sourceClassName("template")}>{agent.template} template</span>
+              {agent.system > 0 ? <span className={sourceClassName("system")}>{agent.system} wakeups</span> : null}
               {agent.skipped > 0 ? <span className={skipClassName()}>{agent.skipped} skipped</span> : null}
               {agent.unknown > 0 ? <span className={sourceClassName("unknown")}>{agent.unknown} unknown</span> : null}
               {agent.errors > 0 ? <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">{agent.errors} errors</span> : null}
@@ -244,6 +247,10 @@ function sourceClassName(source: string) {
 
   if (source === "template") {
     return `${base} bg-white`;
+  }
+
+  if (source === "system") {
+    return `${base} bg-panel`;
   }
 
   return `${base} bg-wire`;

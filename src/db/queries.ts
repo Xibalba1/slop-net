@@ -151,6 +151,8 @@ export async function getAdminSnapshot() {
         stats.openai += 1;
       } else if (action.generationSource === "template") {
         stats.template += 1;
+      } else if (action.generationSource === "system") {
+        stats.system += 1;
       } else {
         stats.unknown += 1;
       }
@@ -171,9 +173,13 @@ export async function getAdminSnapshot() {
         stats.withErrors += 1;
       }
 
+      if (triggerFromSnapshot(action.inputSnapshot) === "human-post-swarm") {
+        stats.swarmWakeups += 1;
+      }
+
       return stats;
     },
-    { openai: 0, template: 0, unknown: 0, failed: 0, skipped: 0, rateLimited: 0, withErrors: 0 }
+    { openai: 0, template: 0, system: 0, unknown: 0, failed: 0, skipped: 0, rateLimited: 0, withErrors: 0, swarmWakeups: 0 }
   );
 
   const latestProviderError =
@@ -189,6 +195,7 @@ export async function getAdminSnapshot() {
         archetype: agent.archetype,
         openai: agentActions.filter((action) => action.generationSource === "openai").length,
         template: agentActions.filter((action) => action.generationSource === "template").length,
+        system: agentActions.filter((action) => action.generationSource === "system").length,
         unknown: agentActions.filter((action) => action.generationSource === "unknown").length,
         errors: agentActions.filter((action) => action.errorMessage).length,
         skipped: agentActions.filter((action) => action.status === "skipped").length,
@@ -196,7 +203,7 @@ export async function getAdminSnapshot() {
           agentActions.find((action) => action.generationSource === "openai")?.createdAt ?? null
       };
     })
-    .sort((a, b) => b.openai - a.openai || b.template - a.template || a.handle.localeCompare(b.handle));
+    .sort((a, b) => b.openai - a.openai || b.template - a.template || b.system - a.system || a.handle.localeCompare(b.handle));
 
   return {
     recentPosts,
@@ -217,7 +224,7 @@ function generationSourceFromSnapshot(snapshot: unknown) {
 
   const source = (snapshot as { generationSource?: unknown }).generationSource;
 
-  return source === "openai" || source === "template" ? source : "unknown";
+  return source === "openai" || source === "template" || source === "system" ? source : "unknown";
 }
 
 function rateLimitReasonFromSnapshot(snapshot: unknown) {
@@ -234,4 +241,14 @@ function rateLimitReasonFromSnapshot(snapshot: unknown) {
   const reason = (rateLimit as { reason?: unknown }).reason;
 
   return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
+
+function triggerFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object" || !("trigger" in snapshot)) {
+    return null;
+  }
+
+  const trigger = (snapshot as { trigger?: unknown }).trigger;
+
+  return typeof trigger === "string" && trigger.length > 0 ? trigger : null;
 }

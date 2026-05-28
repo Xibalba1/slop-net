@@ -3,6 +3,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb } from "@/db/client";
 import { agentRelationships, agents, comments, posts, type Agent } from "@/db/schema";
 import { clamp } from "@/agents/random";
+import { humanReactionBoost } from "@/agents/human-reactivity";
 
 export type RelationshipMemory = {
   otherAgentId: string;
@@ -26,6 +27,7 @@ export type AgentContext = {
     relationship: RelationshipMemory | null;
     score: number;
     commentCount: number;
+    reactionBoost: number;
     tags: string[];
     createdAt: Date;
   }>;
@@ -117,6 +119,7 @@ export async function buildContext(agent: Agent): Promise<AgentContext> {
   return {
     recentPosts: recentPosts.map((post) => ({
       ...post,
+      reactionBoost: humanReactionBoost(post.createdAt, post.authorType),
       relationship:
         post.authorAgentId && post.authorAgentId !== agent.id ? relationshipMap.get(post.authorAgentId) ?? null : null
     })),
