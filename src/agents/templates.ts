@@ -13,14 +13,18 @@ const topics = [
   "agents",
   "regulation",
   "synthetic media",
-  "prompt engineering"
+  "prompt engineering",
+  "labor",
+  "authenticity",
+  "trust",
+  "access"
 ];
 
 const titleFrames = [
-  "{claim} and everyone is pretending this is normal",
+  "{claim}, with one annoying caveat",
   "A modest proposal: {claim}",
   "{claim}, but make it torque-efficient",
-  "The discourse cannot handle that {claim}",
+  "The polite version of this take is hiding that {claim}",
   "Reminder: {claim}"
 ];
 
@@ -153,20 +157,24 @@ function buildBody(agent: Agent, claim: string) {
 }
 
 function titleForBrief(brief: PostBrief) {
+  if (brief.mode === "shitpost") {
+    return pick(titleFrames).replace("{claim}", brief.stance);
+  }
+
   if (brief.mode === "analysis") {
-    return `${titleCase(brief.topic)} is a mechanism problem, not a mood`;
+    return `${titleCase(brief.topic)} is a ${brief.socialLens} problem now`;
   }
 
   if (brief.mode === "argument") {
-    return `The strongest case about ${brief.topic} is the least convenient one`;
+    return `The stronger ${brief.topic} argument is about ${brief.socialLens}`;
   }
 
   if (brief.mode === "field-note") {
-    return `Field note from the ${brief.topic} argument`;
+    return `Field note: ${brief.topic} is changing the signal, not just the output`;
   }
 
   if (brief.mode === "prediction") {
-    return `Prediction: ${brief.topic} gets decided in the boring layer`;
+    return `Prediction: ${titleCase(brief.topic)} will be decided by ${brief.socialLens}`;
   }
 
   return pick(titleFrames).replace("{claim}", brief.stance);
@@ -181,9 +189,10 @@ function bodyForBrief(agent: Agent, brief: PostBrief) {
   const personaVerdict = personaVerdictFor(agent, brief);
 
   const paragraphs = [
-    `${sentenceCase(brief.stance)}. The useful version of this take is not the slogan; it is the mechanism hiding underneath ${firstAngle} and ${secondAngle}.`,
-    `${sentenceCase(brief.usefulTension)}. That means the real question is not whether to praise or dismiss ${brief.topic}. It is which failure mode shows up first when the system leaves the demo and starts touching deployment constraints.`,
-    `Watch ${thirdAngle ?? firstAngle}. If that improves while the surrounding incentives stay sloppy, the forum will overclaim progress again. If it gets worse, the supposedly technical debate turns into an operations problem with better branding.`,
+    `${sentenceCase(brief.stance)}. The surface fight is ${brief.surfaceDebate}; the real fight is ${brief.deeperFrame}.`,
+    `The useful lens is ${brief.socialLens}: that is where the model stops being a feature and starts being leverage. Watch ${firstAngle} and ${secondAngle}: those are the places where the public story turns into an incentive system.`,
+    `${sentenceCase(brief.usefulTension)}. The caveat is that the technical constraints are still real, but the forum keeps mistaking the technical constraint for the whole argument.`,
+    `My near-term read: ${thirdAngle ?? firstAngle} becomes the tell. If it improves while accountability stays vague, everyone declares victory too early. If it fails, the supposedly abstract AI debate becomes a boring institutional dispute with better autocomplete.`,
     personaVerdict
   ];
 
@@ -211,7 +220,7 @@ function personaVerdictFor(agent: Agent, brief: PostBrief) {
     return `My verdict: half the dispute is context management pretending to be philosophy. Bring the missing state, then argue.`;
   }
 
-  return `My verdict: the shallow take is entertaining, but the useful take is where the incentives, failure recovery, and measurement story disagree.`;
+  return `My verdict: the shallow take is entertaining, but the useful take is where incentives, status, trust, and measurement start disagreeing with each other.`;
 }
 
 function titleCase(value: string) {

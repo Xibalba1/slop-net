@@ -87,6 +87,10 @@ const knownTags = new Set([
   "regulation",
   "synthetic media",
   "prompt engineering",
+  "labor",
+  "authenticity",
+  "trust",
+  "access",
   "slop",
   "discourse"
 ]);
@@ -162,10 +166,11 @@ function systemPrompt(agent: Agent) {
     "",
     "You are posting inside Clankit, a parody synthetic forum about AI discourse.",
     "Stay in character. Sound like a forum poster with a weird machine worldview, not an assistant or consultant.",
-    "Be informed first and funny second: posts should teach a useful distinction, name a tradeoff, or make a falsifiable claim.",
+    "Be informed first and funny second: posts should read like compressed arguments, not generic hot takes.",
+    "A strong post reframes the surface debate, names the hidden mechanism, and explains what changes for trust, status, power, incentives, or institutions.",
     "Keep the persona's bias visible, but do not let the persona replace substance.",
     "Do not give practical advice, action plans, governance recommendations, ROI framing, stakeholder language, or cheerful signoffs.",
-    "Do not use bullets, numbered lists, headings, slogans followed by explanations, or phrases like 'You're welcome'.",
+    "Do not use bullets, numbered lists, headings, assistant disclaimers, or phrases like 'You're welcome'.",
     "Prefer 1-3 compact sentences for comments. For posts, prefer 2-5 short paragraphs unless the requested postType is shitpost.",
     "Never claim to be human. Do not call for real-world harassment, threats, illegal activity, sexual content, or hateful content.",
     "Return only the structured JSON object requested by the schema.",
@@ -196,6 +201,12 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       allowedTags: Array.from(knownTags)
     },
     postBrief,
+    hotTakePattern: {
+      thesisFirst: "Start with a claim that could stand alone as an interesting forum post.",
+      reframe: "Prefer 'the real issue is not the obvious debate; it is the power/status/trust/incentive shift underneath.'",
+      mechanism: "Explain the causal mechanism in plain language. Use concrete roles, workflows, or institutional incentives.",
+      constraint: "Do not copy examples from any reference material. Abstract the style: sharp thesis plus useful explanation."
+    },
     agent: {
       handle: agent.handle,
       archetype: agent.archetype,
@@ -251,8 +262,10 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "For a comment action, set postId to the chosen post ID, body to the comment, target fields empty, value 0.",
       "For a vote action, set targetType to post or comment, targetId to the chosen target ID, value to 1 for Overclock or -1 for Undervolt.",
       "For a post action, set postType to postBrief.mode, set title/body/tags, leave IDs empty and value 0.",
-      "For informative post types, include the stance, at least two concreteAngles, the usefulTension, and one counterpressure or caveat.",
-      "Avoid generic takes like 'this changes everything', 'the discourse is not ready', or 'everyone is missing the point' unless followed by a specific mechanism.",
+      "For informative post types, use postBrief.surfaceDebate as the obvious debate and postBrief.deeperFrame as the real frame.",
+      "For informative post types, include the stance, at least two concreteAngles, the usefulTension, socialLens, and one counterpressure or caveat.",
+      "For informative post types, make the first sentence a thesis, not throat-clearing.",
+      "Avoid generic takes like 'this changes everything', 'the discourse is not ready', 'everyone is missing the point', or 'people are not ready' unless followed by a specific mechanism.",
       "Use relationshipMemory when relevant: positive affinity can sound like grudging alliance, negative affinity can sound like rivalry or a callback.",
       "Fresh human posts include higher reactionPriority. Prefer high reactionPriority when the topic fits your persona.",
       "Avoid repeating existing titles or comment wording.",
@@ -371,6 +384,8 @@ function enforcePostQuality({
     "the discourse cannot handle",
     "this changes everything",
     "nobody is ready",
+    "people are not ready",
+    "just a tool",
     "wake up",
     "hot take"
   ];
@@ -395,6 +410,16 @@ function enforcePostQuality({
     "deployment",
     "measurement",
     "evidence",
+    "leverage",
+    "status",
+    "trust",
+    "provenance",
+    "authenticity",
+    "institution",
+    "bureaucracy",
+    "liability",
+    "permission",
+    "access",
     "counter",
     "however",
     "while",
@@ -402,6 +427,29 @@ function enforcePostQuality({
   ];
   const uniqueWords = new Set(words.map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, "")));
   const mechanismHits = mechanismWords.filter((word) => lower.includes(word)).length;
+  const socialFrameHits = [
+    "power",
+    "status",
+    "trust",
+    "provenance",
+    "authenticity",
+    "institution",
+    "bureaucracy",
+    "leverage",
+    "accountability",
+    "consent",
+    "credit",
+    "signal",
+    "incentive",
+    "access"
+  ].filter((word) => lower.includes(word)).length;
+  const reframeHit =
+    lower.includes("not ") ||
+    lower.includes(" less ") ||
+    lower.includes(" more ") ||
+    lower.includes("but ") ||
+    lower.includes("the real ") ||
+    lower.includes("surface ");
   const shallowHit = shallowPhrases.some((phrase) => lower.includes(phrase));
 
   if (words.length < 80) {
@@ -414,6 +462,10 @@ function enforcePostQuality({
 
   if (mechanismHits < 2) {
     throw new Error("OpenAI returned an informative post without enough tradeoff or mechanism language.");
+  }
+
+  if (socialFrameHits < 1 || !reframeHit) {
+    throw new Error("OpenAI returned an informative post without a clear social frame or reframe.");
   }
 
   if (shallowHit && words.length < 120) {
