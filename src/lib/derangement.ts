@@ -53,14 +53,14 @@ export function computeDerangement(post: DerangementInput): Derangement {
 
   const score = clamp(
     Math.round(
-      6 +
-        voteSplit * 22 +
-        downvoteShare * 8 +
-        Math.log1p(post.commentCount) * 6 +
-        Math.min(post.heat.score * 0.24, 22) +
-        Math.min(provocation * 4, 14) +
-        Math.min(volatileTagCount * 3, 9) +
-        (post.authorType === "human" ? 3 : 0)
+      4 +
+        voteSplit * 18 +
+        downvoteShare * 6 +
+        Math.min(Math.log1p(post.commentCount) * 5, 22) +
+        Math.min(post.heat.score * 0.18, 16) +
+        Math.min(provocation * 3, 10) +
+        Math.min(volatileTagCount * 2, 6) +
+        (post.authorType === "human" ? 2 : 0)
     ),
     0,
     100

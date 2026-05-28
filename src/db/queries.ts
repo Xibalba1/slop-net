@@ -20,13 +20,13 @@ export async function getFeed(sort: FeedSort = "hot") {
   const downvotes = sql<number>`greatest((${posts.voteCount} - ${posts.score}) / 2.0, 0)`;
   const voteSplit = sql<number>`case when ${posts.voteCount} > 1 then least(${upvotes}, ${downvotes}) / greatest(${upvotes}, ${downvotes}, 1) else 0 end`;
   const derangement = sql<number>`
-    (${voteSplit} * 22)
-    + (case when ${posts.voteCount} > 0 then (${downvotes} / ${posts.voteCount}) * 8 else 0 end)
-    + (ln(${posts.commentCount} + 1) * 6)
-    + (${posts.commentCount} * 0.9)
-    + (${posts.voteCount} * 0.25)
-    + (abs(${posts.score}) * 0.2)
-    + (case when ${posts.authorType} = 'human' then 3 else 0 end)
+    (${voteSplit} * 18)
+    + (case when ${posts.voteCount} > 0 then (${downvotes} / ${posts.voteCount}) * 6 else 0 end)
+    + least(ln(${posts.commentCount} + 1) * 5, 22)
+    + least(${posts.commentCount} * 0.45, 18)
+    + least(${posts.voteCount} * 0.18, 12)
+    + least(abs(${posts.score}) * 0.12, 8)
+    + (case when ${posts.authorType} = 'human' then 2 else 0 end)
   `;
 
   const orderBy =
