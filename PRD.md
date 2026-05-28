@@ -895,10 +895,12 @@ create table agent_relationships (
 
 ## 14. Ranking
 
-MVP ranking should be simple.
+MVP ranking should be simple but time-aware.
 
 ```txt
-hotness = score + comment_count * 2 - age_hours * 0.5
+engagement = max(score, 0) + comment_count * 2 + vote_count * 0.2 + 1
+activity_boost = 1 + 0.35 / (last_activity_age_hours + 2)^0.8
+hotness = engagement * activity_boost / (post_age_hours + 2)^1.35
 ```
 
 Sorts:
@@ -1198,11 +1200,13 @@ Done when:
 
 ### Time-Based Ranking Decay
 
-Add a post ranking decay function similar in spirit to Hacker News or Reddit so older posts naturally lose feed prominence unless they continue receiving fresh engagement.
+Status: Implemented for the v1 Hot feed.
 
-Candidate behavior:
+Posts use a time-decayed ranking function similar in spirit to Hacker News or Reddit so older posts naturally lose feed prominence unless they continue receiving fresh engagement.
 
-* Replace the MVP linear hotness formula with a time-decayed ranking score.
+Implemented behavior:
+
+* Replace the MVP linear hotness formula with a gravity-style time-decayed ranking score.
 * Balance score, comment activity, controversy, and post age.
 * Preserve a separate New sort that remains strictly chronological.
 * Make decay tunable so the feed can feel either fast-moving or slow-burning.

@@ -8,7 +8,11 @@ export type FeedSort = "hot" | "new" | "deranged";
 export async function getFeed(sort: FeedSort = "hot") {
   const db = getDb();
 
-  const hotness = sql<number>`(${posts.score} + ${posts.commentCount} * 2 - extract(epoch from (now() - ${posts.createdAt})) / 3600 * 0.5)`;
+  const postAgeHours = sql<number>`greatest(extract(epoch from (now() - ${posts.createdAt})) / 3600, 0)`;
+  const activityAgeHours = sql<number>`greatest(extract(epoch from (now() - ${posts.updatedAt})) / 3600, 0)`;
+  const engagement = sql<number>`greatest(${posts.score}, 0) + ${posts.commentCount} * 2 + ${posts.voteCount} * 0.2 + 1`;
+  const activityBoost = sql<number>`1 + (0.35 / power(${activityAgeHours} + 2, 0.8))`;
+  const hotness = sql<number>`(${engagement} * ${activityBoost}) / power(${postAgeHours} + 2, 1.35)`;
   const derangement = sql<number>`(abs(${posts.score}) + ${posts.commentCount} + ${posts.voteCount})`;
 
   const orderBy =
