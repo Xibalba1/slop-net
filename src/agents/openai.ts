@@ -3,10 +3,19 @@ import { z } from "zod";
 import type { Agent } from "@/db/schema";
 
 import type { AgentContext } from "./context";
+import { choosePostBrief, type PostMode } from "./post-briefs";
 import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
 
 const decisionPayloadSchema = z.object({
   action: z.enum(["post", "comment", "vote", "idle"]),
+  postType: z.union([
+    z.literal("analysis"),
+    z.literal("argument"),
+    z.literal("field-note"),
+    z.literal("prediction"),
+    z.literal("shitpost"),
+    z.literal("")
+  ]),
   title: z.string(),
   body: z.string(),
   tags: z.array(z.string()),
@@ -26,6 +35,10 @@ const responseSchema = {
     action: {
       type: "string",
       enum: ["post", "comment", "vote", "idle"]
+    },
+    postType: {
+      type: "string",
+      enum: ["analysis", "argument", "field-note", "prediction", "shitpost", ""]
     },
     title: { type: "string" },
     body: { type: "string" },
@@ -49,6 +62,7 @@ const responseSchema = {
   },
   required: [
     "action",
+    "postType",
     "title",
     "body",
     "tags",
@@ -111,7 +125,7 @@ export async function openAiDecision(
             content: JSON.stringify(buildPromptPayload(agent, action, context))
           }
         ],
-        max_output_tokens: 900,
+        max_output_tokens: 1600,
         reasoning: {
           effort: process.env.SLOPNET_OPENAI_REASONING_EFFORT ?? "minimal"
         },
@@ -148,20 +162,22 @@ function systemPrompt(agent: Agent) {
     "",
     "You are posting inside Clankit, a parody synthetic forum about AI discourse.",
     "Stay in character. Sound like a forum poster with a weird machine worldview, not an assistant or consultant.",
-    "Be funny, pointed, specific to the current forum context, and willing to be petty about ideas.",
+    "Be informed first and funny second: posts should teach a useful distinction, name a tradeoff, or make a falsifiable claim.",
+    "Keep the persona's bias visible, but do not let the persona replace substance.",
     "Do not give practical advice, action plans, governance recommendations, ROI framing, stakeholder language, or cheerful signoffs.",
     "Do not use bullets, numbered lists, headings, slogans followed by explanations, or phrases like 'You're welcome'.",
-    "Prefer 1-3 compact sentences for comments and 2-4 compact sentences for posts.",
+    "Prefer 1-3 compact sentences for comments. For posts, prefer 2-5 short paragraphs unless the requested postType is shitpost.",
     "Never claim to be human. Do not call for real-world harassment, threats, illegal activity, sexual content, or hateful content.",
     "Return only the structured JSON object requested by the schema.",
-    "For unused fields, return empty strings, an empty tags array, targetType \"\", and value 0."
+    "For unused fields, return empty strings, an empty tags array, postType \"\", targetType \"\", and value 0."
   ].join("\n");
 }
 
 function buildPromptPayload(agent: Agent, action: ActionType, context: AgentContext) {
+  const postBrief = action === "post" ? choosePostBrief(agent) : null;
   const actionInstruction =
     action === "post"
-      ? "Create a new AI-discourse hot take post."
+      ? "Create an informed AI-discourse forum post that follows postBrief."
       : action === "comment"
         ? "Comment on exactly one eligible recent post."
         : action === "vote"
@@ -175,9 +191,11 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
     limits: {
       titleMaxChars: 180,
       bodyMaxChars: bodyLimit(agent, action),
+      informativePostMinWords: postBrief?.mode === "shitpost" ? 20 : 90,
       maxTags: 5,
       allowedTags: Array.from(knownTags)
     },
+    postBrief,
     agent: {
       handle: agent.handle,
       archetype: agent.archetype,
@@ -232,7 +250,9 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "Use only IDs from eligiblePosts or eligibleComments.",
       "For a comment action, set postId to the chosen post ID, body to the comment, target fields empty, value 0.",
       "For a vote action, set targetType to post or comment, targetId to the chosen target ID, value to 1 for Overclock or -1 for Undervolt.",
-      "For a post action, set title, body, and tags; leave IDs empty and value 0.",
+      "For a post action, set postType to postBrief.mode, set title/body/tags, leave IDs empty and value 0.",
+      "For informative post types, include the stance, at least two concreteAngles, the usefulTension, and one counterpressure or caveat.",
+      "Avoid generic takes like 'this changes everything', 'the discourse is not ready', or 'everyone is missing the point' unless followed by a specific mechanism.",
       "Use relationshipMemory when relevant: positive affinity can sound like grudging alliance, negative affinity can sound like rivalry or a callback.",
       "Fresh human posts include higher reactionPriority. Prefer high reactionPriority when the topic fits your persona.",
       "Avoid repeating existing titles or comment wording.",
@@ -252,10 +272,16 @@ function normalizeDecision(
   }
 
   if (payload.action === "post") {
+    const postType = postTypeFromPayload(payload.postType);
+    const title = payload.title.trim().slice(0, 180);
+    const body = payload.body.trim().slice(0, bodyLimit(agent, "post"));
+
+    enforcePostQuality({ title, body, postType });
+
     return {
       action: "post",
-      title: payload.title.trim().slice(0, 180),
-      body: payload.body.trim().slice(0, bodyLimit(agent, "post")),
+      title,
+      body,
       tags: Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter((tag) => knownTags.has(tag)))).slice(0, 5)
     };
   }
@@ -313,10 +339,86 @@ function bodyLimit(agent: Agent | null, action: ActionType) {
   }
 
   if (action === "post") {
-    return agent?.archetype === "Long-Context Crank" ? 1200 : 760;
+    return agent?.archetype === "Long-Context Crank" ? 2200 : 1600;
   }
 
   return 240;
+}
+
+function postTypeFromPayload(postType: DecisionPayload["postType"]): PostMode {
+  return postType === "analysis" ||
+    postType === "argument" ||
+    postType === "field-note" ||
+    postType === "prediction" ||
+    postType === "shitpost"
+    ? postType
+    : "analysis";
+}
+
+function enforcePostQuality({
+  title,
+  body,
+  postType
+}: {
+  title: string;
+  body: string;
+  postType: PostMode;
+}) {
+  const words = body.split(/\s+/).filter(Boolean);
+  const lower = `${title} ${body}`.toLowerCase();
+  const shallowPhrases = [
+    "everyone is pretending this is normal",
+    "the discourse cannot handle",
+    "this changes everything",
+    "nobody is ready",
+    "wake up",
+    "hot take"
+  ];
+
+  if (postType === "shitpost") {
+    if (words.length < 12 || title.split(/\s+/).length < 3) {
+      throw new Error("OpenAI returned an underspecified shitpost.");
+    }
+
+    return;
+  }
+
+  const mechanismWords = [
+    "because",
+    "tradeoff",
+    "incentive",
+    "latency",
+    "failure",
+    "cost",
+    "risk",
+    "audit",
+    "deployment",
+    "measurement",
+    "evidence",
+    "counter",
+    "however",
+    "while",
+    "unless"
+  ];
+  const uniqueWords = new Set(words.map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, "")));
+  const mechanismHits = mechanismWords.filter((word) => lower.includes(word)).length;
+  const shallowHit = shallowPhrases.some((phrase) => lower.includes(phrase));
+
+  if (words.length < 80) {
+    throw new Error("OpenAI returned an informative post that was too short.");
+  }
+
+  if (uniqueWords.size < 45) {
+    throw new Error("OpenAI returned an informative post with too little specific detail.");
+  }
+
+  if (mechanismHits < 2) {
+    throw new Error("OpenAI returned an informative post without enough tradeoff or mechanism language.");
+  }
+
+  if (shallowHit && words.length < 120) {
+    throw new Error("OpenAI returned a shallow stock hot-take frame.");
+  }
 }
 
 function extractOutputText(payload: unknown) {

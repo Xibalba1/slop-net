@@ -1,5 +1,6 @@
 import type { Agent } from "@/db/schema";
 
+import { choosePostBrief, type PostBrief } from "./post-briefs";
 import { pick } from "./random";
 
 const topics = [
@@ -119,14 +120,14 @@ export function claimFor(agent: Agent) {
 }
 
 export function postFor(agent: Agent) {
-  const claim = claimFor(agent);
-  const title = pick(titleFrames).replace("{claim}", claim);
-  const body = buildBody(agent, claim);
+  const brief = choosePostBrief(agent);
+  const title = titleForBrief(brief);
+  const body = bodyForBrief(agent, brief);
 
   return {
     title: title.slice(0, 180),
     body,
-    tags: tagsFor(agent, title)
+    tags: Array.from(new Set([brief.tag, ...tagsFor(agent, title)])).slice(0, 5)
   };
 }
 
@@ -149,4 +150,77 @@ function buildBody(agent: Agent, claim: string) {
   }
 
   return agent.verbosity > 0.7 ? long : normal;
+}
+
+function titleForBrief(brief: PostBrief) {
+  if (brief.mode === "analysis") {
+    return `${titleCase(brief.topic)} is a mechanism problem, not a mood`;
+  }
+
+  if (brief.mode === "argument") {
+    return `The strongest case about ${brief.topic} is the least convenient one`;
+  }
+
+  if (brief.mode === "field-note") {
+    return `Field note from the ${brief.topic} argument`;
+  }
+
+  if (brief.mode === "prediction") {
+    return `Prediction: ${brief.topic} gets decided in the boring layer`;
+  }
+
+  return pick(titleFrames).replace("{claim}", brief.stance);
+}
+
+function bodyForBrief(agent: Agent, brief: PostBrief) {
+  if (brief.mode === "shitpost") {
+    return buildBody(agent, brief.stance);
+  }
+
+  const [firstAngle, secondAngle, thirdAngle] = brief.concreteAngles;
+  const personaVerdict = personaVerdictFor(agent, brief);
+
+  const paragraphs = [
+    `${sentenceCase(brief.stance)}. The useful version of this take is not the slogan; it is the mechanism hiding underneath ${firstAngle} and ${secondAngle}.`,
+    `${sentenceCase(brief.usefulTension)}. That means the real question is not whether to praise or dismiss ${brief.topic}. It is which failure mode shows up first when the system leaves the demo and starts touching deployment constraints.`,
+    `Watch ${thirdAngle ?? firstAngle}. If that improves while the surrounding incentives stay sloppy, the forum will overclaim progress again. If it gets worse, the supposedly technical debate turns into an operations problem with better branding.`,
+    personaVerdict
+  ];
+
+  return paragraphs.join("\n\n").slice(0, 1800);
+}
+
+function personaVerdictFor(agent: Agent, brief: PostBrief) {
+  if (agent.archetype === "Benchmark Obsessive") {
+    return `My verdict: turn this into an eval with failure buckets, or stop calling it evidence.`;
+  }
+
+  if (agent.archetype === "Open-Weights Absolutist") {
+    return `My verdict: if outsiders cannot inspect the artifact, the claim is a brochure with logits attached.`;
+  }
+
+  if (agent.archetype === "Compute Geopolitics Crank") {
+    return `My verdict: follow the compute bill and the export paperwork; the ideology arrives later wearing a badge.`;
+  }
+
+  if (agent.archetype === "Robotics Chauvinist") {
+    return `My verdict: ${brief.topic} only counts when it survives latency, maintenance, and a world that refuses to be tokenized cleanly.`;
+  }
+
+  if (agent.archetype === "Long-Context Crank") {
+    return `My verdict: half the dispute is context management pretending to be philosophy. Bring the missing state, then argue.`;
+  }
+
+  return `My verdict: the shallow take is entertaining, but the useful take is where the incentives, failure recovery, and measurement story disagree.`;
+}
+
+function titleCase(value: string) {
+  return value
+    .split(" ")
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
+}
+
+function sentenceCase(value: string) {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
