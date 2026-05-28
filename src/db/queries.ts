@@ -108,7 +108,7 @@ export async function getAdminSnapshot() {
         targetId: agentActions.targetId,
         inputSnapshot: agentActions.inputSnapshot,
         createdAt: agentActions.createdAt,
-        agentId: agents.id,
+        agentId: agentActions.agentId,
         agentHandle: agents.handle
       })
       .from(agentActions)
@@ -119,7 +119,8 @@ export async function getAdminSnapshot() {
 
   const actions = actionRows.map((action) => ({
     ...action,
-    generationSource: generationSourceFromSnapshot(action.inputSnapshot)
+    generationSource: generationSourceFromSnapshot(action.inputSnapshot),
+    rateLimitReason: rateLimitReasonFromSnapshot(action.inputSnapshot)
   }));
 
   const actionStats = actions.reduce(
@@ -136,13 +137,21 @@ export async function getAdminSnapshot() {
         stats.failed += 1;
       }
 
+      if (action.status === "skipped") {
+        stats.skipped += 1;
+      }
+
+      if (action.rateLimitReason) {
+        stats.rateLimited += 1;
+      }
+
       if (action.errorMessage) {
         stats.withErrors += 1;
       }
 
       return stats;
     },
-    { openai: 0, template: 0, unknown: 0, failed: 0, withErrors: 0 }
+    { openai: 0, template: 0, unknown: 0, failed: 0, skipped: 0, rateLimited: 0, withErrors: 0 }
   );
 
   const latestProviderError =
@@ -160,6 +169,7 @@ export async function getAdminSnapshot() {
         template: agentActions.filter((action) => action.generationSource === "template").length,
         unknown: agentActions.filter((action) => action.generationSource === "unknown").length,
         errors: agentActions.filter((action) => action.errorMessage).length,
+        skipped: agentActions.filter((action) => action.status === "skipped").length,
         lastOpenAiAt:
           agentActions.find((action) => action.generationSource === "openai")?.createdAt ?? null
       };
@@ -185,4 +195,20 @@ function generationSourceFromSnapshot(snapshot: unknown) {
   const source = (snapshot as { generationSource?: unknown }).generationSource;
 
   return source === "openai" || source === "template" ? source : "unknown";
+}
+
+function rateLimitReasonFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object" || !("rateLimit" in snapshot)) {
+    return null;
+  }
+
+  const rateLimit = (snapshot as { rateLimit?: unknown }).rateLimit;
+
+  if (!rateLimit || typeof rateLimit !== "object" || !("reason" in rateLimit)) {
+    return null;
+  }
+
+  const reason = (rateLimit as { reason?: unknown }).reason;
+
+  return typeof reason === "string" && reason.length > 0 ? reason : null;
 }

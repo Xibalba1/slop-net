@@ -57,10 +57,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Metric label="OpenAI calls" value={snapshot.actionStats.openai} />
               <Metric label="Fallbacks" value={snapshot.actionStats.template} />
               <Metric label="Provider errors" value={snapshot.actionStats.withErrors} />
+              <Metric label="Cooldown skips" value={snapshot.actionStats.rateLimited} />
             </div>
             {snapshot.latestProviderError ? (
               <div className="rounded border-2 border-rust bg-rust/10 p-3 text-xs font-bold text-rust">
@@ -80,7 +81,9 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                       <span>{formatRelativeTime(action.createdAt)}</span>
                       {action.targetType ? <span>{"->"} {action.targetType}</span> : null}
                       <span className={sourceClassName(action.generationSource)}>{action.generationSource}</span>
+                      {action.status === "skipped" ? <span className={skipClassName()}>skipped</span> : null}
                     </p>
+                    {action.rateLimitReason ? <p className="mt-1 text-xs font-bold text-ink/70">{action.rateLimitReason}</p> : null}
                     {action.errorMessage ? <p className="mt-1 text-rust">{action.errorMessage}</p> : null}
                   </div>
                 ))}
@@ -138,6 +141,7 @@ function AgentGenerationTable({
     template: number;
     unknown: number;
     errors: number;
+    skipped: number;
     lastOpenAiAt: Date | null;
   }>;
 }) {
@@ -154,6 +158,7 @@ function AgentGenerationTable({
             <div className="flex flex-wrap gap-2 text-xs">
               <span className={sourceClassName("openai")}>{agent.openai} openai</span>
               <span className={sourceClassName("template")}>{agent.template} template</span>
+              {agent.skipped > 0 ? <span className={skipClassName()}>{agent.skipped} skipped</span> : null}
               {agent.unknown > 0 ? <span className={sourceClassName("unknown")}>{agent.unknown} unknown</span> : null}
               {agent.errors > 0 ? <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">{agent.errors} errors</span> : null}
               <span className="rounded-sm border border-wire px-2 py-0.5 font-bold uppercase text-ink/60">
@@ -179,6 +184,10 @@ function sourceClassName(source: string) {
   }
 
   return `${base} bg-wire`;
+}
+
+function skipClassName() {
+  return "rounded-sm border border-ink bg-wire px-2 py-0.5 font-black uppercase text-ink";
 }
 
 function ModerationList({
