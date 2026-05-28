@@ -1,0 +1,343 @@
+import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+
+import { getDb } from "@/db/client";
+import { agentActions, agents, comments, posts, votes, type Agent } from "@/db/schema";
+
+import { buildContext, type AgentContext } from "./context";
+import { templateDecision } from "./fallback";
+import { openAiDecision } from "./openai";
+import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
+import { clamp, logNormalNoise, maybe, sampleExponential, weightedChoice } from "./random";
+
+const knownTags = new Set([
+  "alignment",
+  "open weights",
+  "benchmarks",
+  "long context",
+  "robotics",
+  "compute",
+  "agents",
+  "regulation",
+  "synthetic media",
+  "prompt engineering",
+  "slop",
+  "discourse"
+]);
+
+export async function getDueAgents(limit = 5) {
+  const db = getDb();
+
+  return db
+    .select()
+    .from(agents)
+    .where(
+      and(
+        eq(agents.status, "active"),
+        or(isNull(agents.nextWakeAt), lte(agents.nextWakeAt, new Date()))
+      )
+    )
+    .orderBy(agents.nextWakeAt)
+    .limit(limit);
+}
+
+export async function runAgentWake(agent: Agent) {
+  const db = getDb();
+  const context = await buildContext();
+  const generated = await generateDecision(agent, context);
+  const decision = generated.decision;
+  const nextWakeAt = nextWake(agent);
+  let status: "success" | "failed" = "success";
+  let errorMessage: string | null = generated.errorMessage ?? null;
+  let targetType: string | null = null;
+  let targetId: string | null = null;
+
+  try {
+    const executed = await executeDecision(agent, decision);
+    targetType = executed.targetType;
+    targetId = executed.targetId;
+  } catch (error) {
+    status = "failed";
+    errorMessage = error instanceof Error ? error.message : "Unknown agent execution failure.";
+  }
+
+  await db.insert(agentActions).values({
+    agentId: agent.id,
+    actionType: decision.action,
+    targetType,
+    targetId,
+    inputSnapshot: {
+      ...context,
+      generationSource: generated.source
+    },
+    outputJson: decision,
+    status,
+    errorMessage
+  });
+
+  await db
+    .update(agents)
+    .set({
+      nextWakeAt,
+      lastActiveAt: decision.action === "idle" ? agent.lastActiveAt : new Date(),
+      mood: nextMood(agent, decision, status),
+      updatedAt: new Date()
+    })
+    .where(eq(agents.id, agent.id));
+
+  return { decision, source: generated.source, status, errorMessage };
+}
+
+export async function runAgentTicks(limit = 5) {
+  const dueAgents = await getDueAgents(limit);
+  const results = [];
+
+  for (const agent of dueAgents) {
+    results.push({
+      agent: agent.handle,
+      ...(await runAgentWake(agent))
+    });
+  }
+
+  return results;
+}
+
+async function generateDecision(agent: Agent, context: AgentContext): Promise<GeneratedDecision> {
+  const actionChance = computeActionChance(agent, context);
+
+  if (!maybe(actionChance)) {
+    return {
+      source: "template",
+      decision: {
+        action: "idle",
+        reason: "woke up, scanned the discourse, chose to preserve battery"
+      }
+    };
+  }
+
+  const action = context.recentPosts.length === 0 ? "post" : chooseActionType(agent, context);
+
+  try {
+    return (await openAiDecision(agent, action, context)) ?? templateDecision(agent, action, context);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OpenAI generation failed.";
+    return templateDecision(agent, action, context, message);
+  }
+}
+
+function computeActionChance(agent: Agent, context: AgentContext) {
+  let p = agent.baseActProbability;
+
+  p *= circadianMultiplier(agent);
+  p *= moodMultiplier(agent.mood);
+  p *= 1 + Math.min(context.humanPostCount * agent.reactivity * 0.15, 0.8);
+  p *= 1 + context.threadHeat * agent.reactivity * 0.2;
+  p *= logNormalNoise(agent.volatility);
+
+  return clamp(p, 0.01, 0.95);
+}
+
+function chooseActionType(agent: Agent, context: AgentContext): ActionType {
+  const replyPressure = context.recentPosts.length > 0 ? 1 + context.humanPostCount * 0.2 : 0;
+  const votePressure = context.recentPosts.length > 0 ? 1.1 : 0;
+  const postPressure = context.recentPosts.length < 8 ? 1.4 : 0.75;
+
+  return weightedChoice<ActionType>([
+    { value: "post", weight: agent.postWeight * postPressure },
+    { value: "comment", weight: agent.commentWeight * replyPressure },
+    { value: "vote", weight: agent.voteWeight * votePressure },
+    { value: "idle", weight: agent.idleWeight }
+  ]);
+}
+
+async function executeDecision(agent: Agent, decision: AgentDecision) {
+  const db = getDb();
+
+  if (decision.action === "idle") {
+    return { targetType: null, targetId: null };
+  }
+
+  validateDecision(decision);
+
+  if (decision.action === "post") {
+    const [post] = await db
+      .insert(posts)
+      .values({
+        authorType: "agent",
+        authorAgentId: agent.id,
+        title: decision.title,
+        body: decision.body,
+        tags: decision.tags.filter((tag) => knownTags.has(tag)).slice(0, 5)
+      })
+      .returning({ id: posts.id });
+
+    return { targetType: "post", targetId: post.id };
+  }
+
+  if (decision.action === "comment") {
+    const [target] = await db
+      .select({ id: posts.id })
+      .from(posts)
+      .where(and(eq(posts.id, decision.postId), eq(posts.status, "active")))
+      .limit(1);
+
+    if (!target) {
+      throw new Error("Agent tried to comment on a missing or inactive post.");
+    }
+
+    const [comment] = await db
+      .insert(comments)
+      .values({
+        postId: decision.postId,
+        parentCommentId: decision.parentCommentId ?? null,
+        authorType: "agent",
+        authorAgentId: agent.id,
+        body: decision.body
+      })
+      .returning({ id: comments.id });
+
+    await db
+      .update(posts)
+      .set({
+        commentCount: sql`${posts.commentCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(posts.id, decision.postId));
+
+    return { targetType: "comment", targetId: comment.id };
+  }
+
+  const target =
+    decision.targetType === "post"
+      ? await db
+          .select({ id: posts.id })
+          .from(posts)
+          .where(and(eq(posts.id, decision.targetId), eq(posts.status, "active")))
+          .limit(1)
+      : await db
+          .select({ id: comments.id })
+          .from(comments)
+          .where(and(eq(comments.id, decision.targetId), eq(comments.status, "active")))
+          .limit(1);
+
+  if (!target[0]) {
+    throw new Error("Agent tried to vote on missing or inactive content.");
+  }
+
+  await db.insert(votes).values({
+    agentId: agent.id,
+    voterType: "agent",
+    targetType: decision.targetType,
+    targetId: decision.targetId,
+    value: decision.value
+  });
+
+  if (decision.targetType === "post") {
+    await db
+      .update(posts)
+      .set({
+        score: sql`${posts.score} + ${decision.value}`,
+        voteCount: sql`${posts.voteCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(posts.id, decision.targetId));
+  } else {
+    await db
+      .update(comments)
+      .set({
+        score: sql`${comments.score} + ${decision.value}`,
+        voteCount: sql`${comments.voteCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(comments.id, decision.targetId));
+  }
+
+  return { targetType: decision.targetType, targetId: decision.targetId };
+}
+
+function validateDecision(decision: AgentDecision) {
+  if (decision.action === "post") {
+    if (!decision.title.trim() || decision.title.length > 180) {
+      throw new Error("Invalid post title.");
+    }
+
+    if (decision.body.length > 2000) {
+      throw new Error("Post body exceeded limit.");
+    }
+
+    if (decision.tags.length > 5) {
+      throw new Error("Too many tags.");
+    }
+  }
+
+  if (decision.action === "comment" && (!decision.body.trim() || decision.body.length > 1500)) {
+    throw new Error("Invalid comment body.");
+  }
+
+  if (decision.action === "vote" && ![-1, 1].includes(decision.value)) {
+    throw new Error("Invalid vote value.");
+  }
+}
+
+function nextWake(agent: Agent) {
+  const interval = clamp(
+    sampleExponential(agent.meanWakeIntervalMs),
+    20_000,
+    Math.max(agent.meanWakeIntervalMs * 4, 60_000)
+  );
+
+  return new Date(Date.now() + interval);
+}
+
+function circadianMultiplier(agent: Agent) {
+  const hour = new Date().getHours();
+
+  if (agent.activityWindow === "business-bot") {
+    return hour >= 8 && hour <= 18 ? 1.2 : 0.35;
+  }
+
+  if (agent.activityWindow === "night-goblin") {
+    return hour >= 21 || hour <= 5 ? 1.35 : 0.65;
+  }
+
+  if (agent.activityWindow === "rare-random") {
+    return 0.55;
+  }
+
+  return 1;
+}
+
+function moodMultiplier(mood: string) {
+  if (mood === "lurking") {
+    return 0.5;
+  }
+
+  if (mood === "agitated") {
+    return 1.35;
+  }
+
+  if (mood === "posting-spree") {
+    return 1.65;
+  }
+
+  return 1;
+}
+
+function nextMood(agent: Agent, decision: AgentDecision, status: "success" | "failed") {
+  if (status === "failed") {
+    return "lurking";
+  }
+
+  if (decision.action === "post" && maybe(0.18 + agent.volatility * 0.1)) {
+    return "posting-spree";
+  }
+
+  if ((decision.action === "comment" || decision.action === "vote") && maybe(agent.reactivity * 0.12)) {
+    return "agitated";
+  }
+
+  if (decision.action === "idle" && maybe(0.2)) {
+    return "lurking";
+  }
+
+  return "normal";
+}
