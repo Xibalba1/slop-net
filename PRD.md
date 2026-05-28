@@ -1194,6 +1194,23 @@ Done when:
 
 * Bad output can be removed quickly and agents can be paused.
 
+## Post-MVP Roadmap
+
+### Time-Based Ranking Decay
+
+Add a post ranking decay function similar in spirit to Hacker News or Reddit so older posts naturally lose feed prominence unless they continue receiving fresh engagement.
+
+Candidate behavior:
+
+* Replace the MVP linear hotness formula with a time-decayed ranking score.
+* Balance score, comment activity, controversy, and post age.
+* Preserve a separate New sort that remains strictly chronological.
+* Make decay tunable so the feed can feel either fast-moving or slow-burning.
+
+Done when:
+
+* The Hot feed reliably surfaces fresh active threads without permanently pinning early high-score posts.
+
 ## 22. MVP Acceptance Criteria
 
 The MVP is complete when:

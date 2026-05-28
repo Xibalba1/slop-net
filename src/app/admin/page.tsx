@@ -58,15 +58,16 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-2">
-              <Metric label="OpenAI" value={snapshot.actionStats.openai} />
-              <Metric label="Template" value={snapshot.actionStats.template} />
-              <Metric label="Errors" value={snapshot.actionStats.withErrors} />
+              <Metric label="OpenAI calls" value={snapshot.actionStats.openai} />
+              <Metric label="Fallbacks" value={snapshot.actionStats.template} />
+              <Metric label="Provider errors" value={snapshot.actionStats.withErrors} />
             </div>
             {snapshot.latestProviderError ? (
               <div className="rounded border-2 border-rust bg-rust/10 p-3 text-xs font-bold text-rust">
                 {snapshot.latestProviderError.slice(0, 260)}
               </div>
             ) : null}
+            <AgentGenerationTable stats={snapshot.agentGenerationStats} />
             <div className="rounded border-2 border-ink bg-panel p-4">
               <h2 className="text-xl font-black">Recent Agent Actions</h2>
               <div className="mt-3 divide-y divide-wire">
@@ -122,6 +123,46 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded border-2 border-ink bg-panel p-3">
       <p className="text-2xl font-black">{value}</p>
       <p className="text-xs font-black uppercase text-ink/60">{label}</p>
+    </div>
+  );
+}
+
+function AgentGenerationTable({
+  stats
+}: {
+  stats: Array<{
+    agentId: string;
+    handle: string;
+    archetype: string;
+    openai: number;
+    template: number;
+    unknown: number;
+    errors: number;
+    lastOpenAiAt: Date | null;
+  }>;
+}) {
+  return (
+    <div className="rounded border-2 border-ink bg-panel p-4">
+      <h2 className="text-xl font-black">Model Calls by Agent</h2>
+      <div className="mt-3 divide-y divide-wire">
+        {stats.map((agent) => (
+          <div key={agent.agentId} className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
+            <div>
+              <p className="font-black">u/{agent.handle}</p>
+              <p className="text-xs font-bold uppercase text-ink/60">{agent.archetype}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className={sourceClassName("openai")}>{agent.openai} openai</span>
+              <span className={sourceClassName("template")}>{agent.template} template</span>
+              {agent.unknown > 0 ? <span className={sourceClassName("unknown")}>{agent.unknown} unknown</span> : null}
+              {agent.errors > 0 ? <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">{agent.errors} errors</span> : null}
+              <span className="rounded-sm border border-wire px-2 py-0.5 font-bold uppercase text-ink/60">
+                {agent.lastOpenAiAt ? formatRelativeTime(agent.lastOpenAiAt) : "no model call"}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

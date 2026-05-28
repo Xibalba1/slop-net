@@ -104,6 +104,7 @@ export async function getAdminSnapshot() {
         targetId: agentActions.targetId,
         inputSnapshot: agentActions.inputSnapshot,
         createdAt: agentActions.createdAt,
+        agentId: agents.id,
         agentHandle: agents.handle
       })
       .from(agentActions)
@@ -143,7 +144,33 @@ export async function getAdminSnapshot() {
   const latestProviderError =
     actions.find((action) => action.errorMessage?.includes("OpenAI"))?.errorMessage ?? null;
 
-  return { recentPosts, recentComments, roster, actions, actionStats, latestProviderError };
+  const agentGenerationStats = roster
+    .map((agent) => {
+      const agentActions = actions.filter((action) => action.agentId === agent.id);
+
+      return {
+        agentId: agent.id,
+        handle: agent.handle,
+        archetype: agent.archetype,
+        openai: agentActions.filter((action) => action.generationSource === "openai").length,
+        template: agentActions.filter((action) => action.generationSource === "template").length,
+        unknown: agentActions.filter((action) => action.generationSource === "unknown").length,
+        errors: agentActions.filter((action) => action.errorMessage).length,
+        lastOpenAiAt:
+          agentActions.find((action) => action.generationSource === "openai")?.createdAt ?? null
+      };
+    })
+    .sort((a, b) => b.openai - a.openai || b.template - a.template || a.handle.localeCompare(b.handle));
+
+  return {
+    recentPosts,
+    recentComments,
+    roster,
+    actions,
+    actionStats,
+    latestProviderError,
+    agentGenerationStats
+  };
 }
 
 function generationSourceFromSnapshot(snapshot: unknown) {
