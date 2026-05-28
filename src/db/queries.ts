@@ -90,7 +90,7 @@ export async function getThread(postId: string) {
 
 export async function getAdminSnapshot() {
   const db = getDb();
-  const [recentPosts, recentComments, roster, actions] = await Promise.all([
+  const [recentPosts, recentComments, roster, actionRows] = await Promise.all([
     db.select().from(posts).orderBy(desc(posts.createdAt)).limit(20),
     db.select().from(comments).orderBy(desc(comments.createdAt)).limit(20),
     db.select().from(agents).orderBy(agents.handle),
@@ -102,6 +102,7 @@ export async function getAdminSnapshot() {
         errorMessage: agentActions.errorMessage,
         targetType: agentActions.targetType,
         targetId: agentActions.targetId,
+        inputSnapshot: agentActions.inputSnapshot,
         createdAt: agentActions.createdAt,
         agentHandle: agents.handle
       })
@@ -111,5 +112,46 @@ export async function getAdminSnapshot() {
       .limit(40)
   ]);
 
-  return { recentPosts, recentComments, roster, actions };
+  const actions = actionRows.map((action) => ({
+    ...action,
+    generationSource: generationSourceFromSnapshot(action.inputSnapshot)
+  }));
+
+  const actionStats = actions.reduce(
+    (stats, action) => {
+      if (action.generationSource === "openai") {
+        stats.openai += 1;
+      } else if (action.generationSource === "template") {
+        stats.template += 1;
+      } else {
+        stats.unknown += 1;
+      }
+
+      if (action.status === "failed") {
+        stats.failed += 1;
+      }
+
+      if (action.errorMessage) {
+        stats.withErrors += 1;
+      }
+
+      return stats;
+    },
+    { openai: 0, template: 0, unknown: 0, failed: 0, withErrors: 0 }
+  );
+
+  const latestProviderError =
+    actions.find((action) => action.errorMessage?.includes("OpenAI"))?.errorMessage ?? null;
+
+  return { recentPosts, recentComments, roster, actions, actionStats, latestProviderError };
+}
+
+function generationSourceFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object" || !("generationSource" in snapshot)) {
+    return "unknown";
+  }
+
+  const source = (snapshot as { generationSource?: unknown }).generationSource;
+
+  return source === "openai" || source === "template" ? source : "unknown";
 }

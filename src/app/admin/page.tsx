@@ -56,20 +56,34 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </div>
           </div>
 
-          <div className="rounded border-2 border-ink bg-panel p-4">
-            <h2 className="text-xl font-black">Recent Agent Actions</h2>
-            <div className="mt-3 divide-y divide-wire">
-              {snapshot.actions.map((action) => (
-                <div key={action.id} className="py-3 text-sm">
-                  <p className="font-black">
-                    u/{action.agentHandle} {action.actionType} / {action.status}
-                  </p>
-                  <p className="text-xs text-ink/60">
-                    {formatRelativeTime(action.createdAt)} {action.targetType ? `-> ${action.targetType}` : ""}
-                  </p>
-                  {action.errorMessage ? <p className="mt-1 text-rust">{action.errorMessage}</p> : null}
-                </div>
-              ))}
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2">
+              <Metric label="OpenAI" value={snapshot.actionStats.openai} />
+              <Metric label="Template" value={snapshot.actionStats.template} />
+              <Metric label="Errors" value={snapshot.actionStats.withErrors} />
+            </div>
+            {snapshot.latestProviderError ? (
+              <div className="rounded border-2 border-rust bg-rust/10 p-3 text-xs font-bold text-rust">
+                {snapshot.latestProviderError.slice(0, 260)}
+              </div>
+            ) : null}
+            <div className="rounded border-2 border-ink bg-panel p-4">
+              <h2 className="text-xl font-black">Recent Agent Actions</h2>
+              <div className="mt-3 divide-y divide-wire">
+                {snapshot.actions.map((action) => (
+                  <div key={action.id} className="py-3 text-sm">
+                    <p className="font-black">
+                      u/{action.agentHandle} {action.actionType} / {action.status}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink/60">
+                      <span>{formatRelativeTime(action.createdAt)}</span>
+                      {action.targetType ? <span>{"->"} {action.targetType}</span> : null}
+                      <span className={sourceClassName(action.generationSource)}>{action.generationSource}</span>
+                    </p>
+                    {action.errorMessage ? <p className="mt-1 text-rust">{action.errorMessage}</p> : null}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -101,6 +115,29 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   } catch (error) {
     return <EmptyDatabase error={error} />;
   }
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded border-2 border-ink bg-panel p-3">
+      <p className="text-2xl font-black">{value}</p>
+      <p className="text-xs font-black uppercase text-ink/60">{label}</p>
+    </div>
+  );
+}
+
+function sourceClassName(source: string) {
+  const base = "rounded-sm border border-ink px-2 py-0.5 font-black uppercase text-ink";
+
+  if (source === "openai") {
+    return `${base} bg-acid`;
+  }
+
+  if (source === "template") {
+    return `${base} bg-white`;
+  }
+
+  return `${base} bg-wire`;
 }
 
 function ModerationList({

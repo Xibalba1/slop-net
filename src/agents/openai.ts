@@ -134,7 +134,7 @@ export async function openAiDecision(
     const payload = (await response.json()) as unknown;
     const text = extractOutputText(payload);
     const parsed = decisionPayloadSchema.parse(JSON.parse(text));
-    const decision = normalizeDecision(parsed, action, context);
+    const decision = normalizeDecision(agent, parsed, action, context);
 
     return { decision, source: "openai" };
   } finally {
@@ -147,7 +147,11 @@ function systemPrompt(agent: Agent) {
     agent.systemPrompt,
     "",
     "You are posting inside Clankit, a parody synthetic forum about AI discourse.",
-    "Stay in character. Be funny, pointed, and specific to the current forum context.",
+    "Stay in character. Sound like a forum poster with a weird machine worldview, not an assistant or consultant.",
+    "Be funny, pointed, specific to the current forum context, and willing to be petty about ideas.",
+    "Do not give practical advice, action plans, governance recommendations, ROI framing, stakeholder language, or cheerful signoffs.",
+    "Do not use bullets, numbered lists, headings, slogans followed by explanations, or phrases like 'You're welcome'.",
+    "Prefer 1-3 compact sentences for comments and 2-4 compact sentences for posts.",
     "Never claim to be human. Do not call for real-world harassment, threats, illegal activity, sexual content, or hateful content.",
     "Return only the structured JSON object requested by the schema.",
     "For unused fields, return empty strings, an empty tags array, targetType \"\", and value 0."
@@ -170,7 +174,7 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
     actionInstruction,
     limits: {
       titleMaxChars: 180,
-      bodyMaxChars: action === "comment" ? 1500 : 2000,
+      bodyMaxChars: bodyLimit(agent, action),
       maxTags: 5,
       allowedTags: Array.from(knownTags)
     },
@@ -214,12 +218,18 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "For a comment action, set postId to the chosen post ID, body to the comment, target fields empty, value 0.",
       "For a vote action, set targetType to post or comment, targetId to the chosen target ID, value to 1 for Overclock or -1 for Undervolt.",
       "For a post action, set title, body, and tags; leave IDs empty and value 0.",
-      "Avoid repeating existing titles or comment wording."
+      "Avoid repeating existing titles or comment wording.",
+      "Comments should feel like an internet reply, not a policy memo."
     ]
   };
 }
 
-function normalizeDecision(payload: DecisionPayload, expectedAction: ActionType, context: AgentContext): AgentDecision {
+function normalizeDecision(
+  agent: Agent,
+  payload: DecisionPayload,
+  expectedAction: ActionType,
+  context: AgentContext
+): AgentDecision {
   if (payload.action !== expectedAction) {
     throw new Error(`OpenAI returned ${payload.action}, expected ${expectedAction}.`);
   }
@@ -228,7 +238,7 @@ function normalizeDecision(payload: DecisionPayload, expectedAction: ActionType,
     return {
       action: "post",
       title: payload.title.trim().slice(0, 180),
-      body: payload.body.trim().slice(0, 2000),
+      body: payload.body.trim().slice(0, bodyLimit(agent, "post")),
       tags: Array.from(new Set(payload.tags.map((tag) => tag.trim()).filter((tag) => knownTags.has(tag)))).slice(0, 5)
     };
   }
@@ -244,7 +254,7 @@ function normalizeDecision(payload: DecisionPayload, expectedAction: ActionType,
       action: "comment",
       postId: payload.postId,
       parentCommentId: null,
-      body: payload.body.trim().slice(0, 1500)
+      body: payload.body.trim().slice(0, bodyLimit(agent, "comment"))
     };
   }
 
@@ -278,6 +288,18 @@ function normalizeDecision(payload: DecisionPayload, expectedAction: ActionType,
     action: "idle",
     reason: payload.reason.trim() || "model chose to idle"
   };
+}
+
+function bodyLimit(agent: Agent | null, action: ActionType) {
+  if (action === "comment") {
+    return agent?.archetype === "Long-Context Crank" ? 900 : 520;
+  }
+
+  if (action === "post") {
+    return agent?.archetype === "Long-Context Crank" ? 1200 : 760;
+  }
+
+  return 240;
 }
 
 function extractOutputText(payload: unknown) {
