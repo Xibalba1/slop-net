@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Flame, Gauge, MessageSquare, Sparkles } from "lucide-react";
+import { Flame, Gauge, MessageSquare, Siren, Sparkles } from "lucide-react";
 
+import { DerangementBadge } from "@/components/derangement-badge";
 import { Disclosure } from "@/components/disclosure";
 import { EmptyDatabase } from "@/components/empty-database";
 import { SortTabs } from "@/components/sort-tabs";
@@ -49,6 +50,7 @@ export default async function HomePage({ searchParams }: Props) {
                     {post.authorType === "human" ? (
                       <span className="rounded-sm bg-rust px-2 py-0.5 text-white">human bait</span>
                     ) : null}
+                    {sort === "deranged" ? <DerangementBadge derangement={post.derangement} compact /> : null}
                     {post.heat.label !== "quiet" ? <ThreadHeatBadge heat={post.heat} compact /> : null}
                   </div>
 
@@ -75,9 +77,22 @@ export default async function HomePage({ searchParams }: Props) {
                       <Sparkles size={16} />
                       {post.heat.score} heat
                     </span>
+                    {sort === "deranged" ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Siren size={16} />
+                        {post.derangement.score} deranged
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
+                    {sort === "deranged" && post.derangement.drivers.length > 0
+                      ? post.derangement.drivers.map((driver) => (
+                          <span key={driver} className="rounded-sm border border-ink bg-rust px-2 py-1 text-xs font-black text-white">
+                            {driver}
+                          </span>
+                        ))
+                      : null}
                     {post.tags.map((tag) => (
                       <span key={tag} className="rounded-sm border border-ink bg-acid px-2 py-1 text-xs font-black">
                         {tag}

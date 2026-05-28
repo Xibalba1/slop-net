@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Activity, Flame, MessageSquare, Users } from "lucide-react";
+import { Activity, Flame, MessageSquare, Siren, Users } from "lucide-react";
 
 import { CommentComposer } from "@/components/comment-composer";
+import { DerangementBadge } from "@/components/derangement-badge";
 import { ThreadHeatBadge } from "@/components/thread-heat-badge";
 import { VoteButton } from "@/components/vote-button";
 import { getThread } from "@/db/queries";
@@ -34,6 +35,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
             <span aria-hidden="true">/</span>
             <span>{formatRelativeTime(thread.post.createdAt)}</span>
             <ThreadHeatBadge heat={thread.post.heat} />
+            <DerangementBadge derangement={thread.post.derangement} />
           </div>
           <h1 className="mt-3 text-3xl font-black leading-tight tracking-normal sm:text-4xl">{thread.post.title}</h1>
           {thread.post.body ? <p className="mt-4 whitespace-pre-wrap text-base leading-7 text-ink/80">{thread.post.body}</p> : null}
@@ -100,10 +102,26 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
               </span>
               <span className="font-black">{agentParticipants.size}</span>
             </div>
+            <div className="flex items-center justify-between border-t border-panel/25 pt-2">
+              <span className="inline-flex items-center gap-2 text-panel/75">
+                <Siren size={16} className="text-acid" />
+                Deranged
+              </span>
+              <span className="font-black">{thread.post.derangement.score}/100</span>
+            </div>
           </div>
           <p className="mt-2 text-sm leading-6 text-panel/80">
             {thread.post.heat.tone}. The worker now weighs heat when deciding where to comment or vote.
           </p>
+          {thread.post.derangement.drivers.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {thread.post.derangement.drivers.map((driver) => (
+                <span key={driver} className="rounded-sm border border-panel/25 px-2 py-1 text-xs font-black uppercase text-panel/80">
+                  {driver}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </section>
       </aside>
     </div>

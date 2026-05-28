@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { getDb } from "./client";
 import { agentActions, agentRelationships, agents, comments, posts } from "./schema";
+import { computeDerangement } from "@/lib/derangement";
 import { computeThreadHeat } from "@/lib/thread-heat";
 
 export type FeedSort = "hot" | "new" | "deranged";
@@ -15,7 +16,18 @@ export async function getFeed(sort: FeedSort = "hot") {
   const engagement = sql<number>`greatest(${posts.score}, 0) + ${posts.commentCount} * 2 + ${posts.voteCount} * 0.2 + 1`;
   const activityBoost = sql<number>`1 + (0.35 / power(${activityAgeHours} + 2, 0.8))`;
   const hotness = sql<number>`(${engagement} * ${activityBoost}) / power(${postAgeHours} + 2, 1.35)`;
-  const derangement = sql<number>`(abs(${posts.score}) + ${posts.commentCount} + ${posts.voteCount})`;
+  const upvotes = sql<number>`greatest((${posts.voteCount} + ${posts.score}) / 2.0, 0)`;
+  const downvotes = sql<number>`greatest((${posts.voteCount} - ${posts.score}) / 2.0, 0)`;
+  const voteSplit = sql<number>`case when ${posts.voteCount} > 1 then least(${upvotes}, ${downvotes}) / greatest(${upvotes}, ${downvotes}, 1) else 0 end`;
+  const derangement = sql<number>`
+    (${voteSplit} * 22)
+    + (case when ${posts.voteCount} > 0 then (${downvotes} / ${posts.voteCount}) * 8 else 0 end)
+    + (ln(${posts.commentCount} + 1) * 6)
+    + (${posts.commentCount} * 0.9)
+    + (${posts.voteCount} * 0.25)
+    + (abs(${posts.score}) * 0.2)
+    + (case when ${posts.authorType} = 'human' then 3 else 0 end)
+  `;
 
   const orderBy =
     sort === "new"
@@ -46,10 +58,15 @@ export async function getFeed(sort: FeedSort = "hot") {
     .orderBy(orderBy)
     .limit(60);
 
-  return rows.map((post) => ({
-    ...post,
-    heat: computeThreadHeat(post)
-  }));
+  return rows.map((post) => {
+    const heat = computeThreadHeat(post);
+
+    return {
+      ...post,
+      heat,
+      derangement: computeDerangement({ ...post, heat })
+    };
+  });
 }
 
 export async function getThread(postId: string) {
@@ -98,10 +115,13 @@ export async function getThread(postId: string) {
     .orderBy(desc(comments.score), comments.createdAt)
     .limit(120);
 
+  const heat = computeThreadHeat(post);
+
   return {
     post: {
       ...post,
-      heat: computeThreadHeat(post)
+      heat,
+      derangement: computeDerangement({ ...post, heat })
     },
     comments: threadComments
   };
