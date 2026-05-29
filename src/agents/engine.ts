@@ -6,6 +6,7 @@ import { agentActions, agents, comments, posts, votes, type Agent } from "@/db/s
 
 import { buildContext, type AgentContext } from "./context";
 import { templateDecision } from "./fallback";
+import { fallbackDiagnostic, providerUnavailableDiagnostic } from "./generation-diagnostics";
 import { openAiDecision } from "./openai";
 import { recordRelationshipInteraction } from "./relationships";
 import type {
@@ -79,7 +80,8 @@ async function persistAgentWake({
   rateLimit,
   logActionType,
   graphPath,
-  failedStep
+  failedStep,
+  generationDiagnostic
 }: PersistAgentWakeInput) {
   const db = getDb();
 
@@ -91,6 +93,7 @@ async function persistAgentWake({
     inputSnapshot: {
       ...context,
       generationSource: source,
+      generationDiagnostic: generationDiagnostic ?? null,
       wakeTrigger,
       trigger: wakeTrigger?.reason,
       rateLimit,
@@ -146,10 +149,12 @@ async function generateDecision(agent: Agent, context: AgentContext): Promise<Ge
   }
 
   try {
-    return (await openAiDecision(agent, action, context)) ?? templateDecision(agent, action, context);
+    const generated = await openAiDecision(agent, action, context);
+
+    return generated ?? templateDecision(agent, action, context, undefined, providerUnavailableDiagnostic(action));
   } catch (error) {
     const message = error instanceof Error ? error.message : "OpenAI generation failed.";
-    return templateDecision(agent, action, context, message);
+    return templateDecision(agent, action, context, message, fallbackDiagnostic(action, error));
   }
 }
 

@@ -26,10 +26,25 @@ export type ActionType = AgentDecision["action"];
 
 export type GenerationSource = "openai" | "template";
 
+export type GenerationDiagnosticStage =
+  | "provider_unavailable"
+  | "provider_request"
+  | "schema_parse"
+  | "quality_gate"
+  | "unknown";
+
+export type GenerationDiagnostic = {
+  provider: "openai";
+  attemptedAction: ActionType;
+  stage: GenerationDiagnosticStage;
+  reason: string;
+};
+
 export type GeneratedDecision = {
   decision: AgentDecision;
   source: GenerationSource;
   errorMessage?: string;
+  diagnostic?: GenerationDiagnostic;
 };
 
 export type AgentActionStatus = "success" | "failed" | "skipped";

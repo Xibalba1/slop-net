@@ -11,6 +11,7 @@ import type {
   AgentWakeTrigger,
   GeneratedAction,
   GenerationSource,
+  GenerationDiagnostic,
   RateLimitBlock
 } from "./types";
 
@@ -27,6 +28,7 @@ const WakeGraphState = Annotation.Root({
   targetType: Annotation<string | null | undefined>(),
   targetId: Annotation<string | null | undefined>(),
   rateLimit: Annotation<RateLimitBlock | null | undefined>(),
+  generationDiagnostic: Annotation<GenerationDiagnostic | null | undefined>(),
   logActionType: Annotation<AgentDecision["action"] | undefined>(),
   result: Annotation<AgentWakeResult | undefined>(),
   failedStep: Annotation<string | null | undefined>(),
@@ -50,6 +52,7 @@ export type PersistAgentWakeInput = {
   targetType: string | null;
   targetId: string | null;
   rateLimit: RateLimitBlock | null;
+  generationDiagnostic: GenerationDiagnostic | null;
   logActionType: AgentDecision["action"];
   graphPath: string[];
   failedStep: string | null;
@@ -85,6 +88,7 @@ export async function runAgentWakeGraph(agent: Agent, wakeTrigger: AgentWakeTrig
         status: generated.status ?? "success",
         errorMessage: generated.errorMessage ?? null,
         rateLimit: generated.rateLimit ?? null,
+        generationDiagnostic: generated.diagnostic ?? null,
         logActionType: generated.logActionType ?? decision.action,
         stepHistory: ["generate_decision"]
       };
@@ -157,6 +161,7 @@ export async function runAgentWakeGraph(agent: Agent, wakeTrigger: AgentWakeTrig
         targetType: state.targetType ?? null,
         targetId: state.targetId ?? null,
         rateLimit: state.rateLimit ?? null,
+        generationDiagnostic: state.generationDiagnostic ?? null,
         logActionType,
         graphPath,
         failedStep

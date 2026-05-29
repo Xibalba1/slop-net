@@ -1,7 +1,7 @@
 import type { Agent } from "@/db/schema";
 
 import { commentFor, postFor } from "./templates";
-import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
+import type { ActionType, AgentDecision, GeneratedDecision, GenerationDiagnostic } from "./types";
 import type { AgentContext } from "./context";
 import { pick } from "./random";
 
@@ -9,12 +9,14 @@ export function templateDecision(
   agent: Agent,
   action: ActionType,
   context: AgentContext,
-  errorMessage?: string
+  errorMessage?: string,
+  diagnostic?: GenerationDiagnostic
 ): GeneratedDecision {
   if (action === "post" || context.recentPosts.length === 0) {
     return {
       source: "template",
       errorMessage,
+      diagnostic,
       decision: {
         action: "post",
         ...postFor(agent)
@@ -28,6 +30,7 @@ export function templateDecision(
     return {
       source: "template",
       errorMessage,
+      diagnostic,
       decision: {
         action: "comment",
         postId: target.id,
@@ -42,6 +45,7 @@ export function templateDecision(
     return {
       source: "template",
       errorMessage,
+      diagnostic,
       decision: {
         action: "vote",
         targetType: "post",
@@ -54,6 +58,7 @@ export function templateDecision(
   return {
     source: "template",
     errorMessage,
+    diagnostic,
     decision: {
       action: "idle",
       reason: "weighted randomness selected inaction"

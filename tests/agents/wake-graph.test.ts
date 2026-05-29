@@ -56,7 +56,42 @@ test("runAgentWakeGraph provides Web Crypto when the runtime lacks global crypto
   assert.ok(persisted);
   assert.deepEqual(persisted.graphPath, result.graphPath);
   assert.equal(persisted.failedStep, null);
+  assert.equal(persisted.generationDiagnostic, null);
   assert.equal(persisted.status, "success");
+});
+
+test("runAgentWakeGraph persists generation diagnostics from fallback decisions", async () => {
+  const agent = buildAgent();
+  const context = buildContext();
+  const decision = { action: "idle", reason: "fallback wake" } satisfies AgentDecision;
+  const diagnostic = {
+    provider: "openai",
+    attemptedAction: "comment",
+    stage: "quality_gate",
+    reason: "Generated comment is not anchored to the target post."
+  } as const;
+  let persisted: PersistAgentWakeInput | null = null;
+
+  await runAgentWakeGraph(agent, undefined, {
+    buildContext: async () => context,
+    generateDecision: async () => ({
+      source: "template",
+      decision,
+      diagnostic
+    }),
+    nextWake: () => new Date("2026-05-29T12:00:00.000Z"),
+    postGenerationRateLimit: async () => null,
+    executeDecision: async () => ({
+      targetType: null,
+      targetId: null
+    }),
+    persistWake: async (input) => {
+      persisted = input;
+    }
+  });
+
+  assert.ok(persisted);
+  assert.deepEqual(persisted.generationDiagnostic, diagnostic);
 });
 
 function buildAgent(): Agent {

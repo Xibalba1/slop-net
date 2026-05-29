@@ -416,6 +416,7 @@ export async function getAdminSnapshot() {
   const actions = actionRows.map((action) => ({
     ...action,
     generationSource: generationSourceFromSnapshot(action.inputSnapshot),
+    generationDiagnostic: generationDiagnosticFromSnapshot(action.inputSnapshot),
     rateLimitReason: rateLimitReasonFromSnapshot(action.inputSnapshot),
     graphFailedStep: graphFailedStepFromSnapshot(action.inputSnapshot),
     graphPath: graphPathFromSnapshot(action.inputSnapshot)
@@ -449,6 +450,14 @@ export async function getAdminSnapshot() {
         stats.withErrors += 1;
       }
 
+      if (action.generationDiagnostic) {
+        stats.generationFallbacks += 1;
+      }
+
+      if (action.generationDiagnostic?.stage === "quality_gate") {
+        stats.qualityGateFallbacks += 1;
+      }
+
       if (action.graphFailedStep) {
         stats.graphFailures += 1;
       }
@@ -468,6 +477,8 @@ export async function getAdminSnapshot() {
       skipped: 0,
       rateLimited: 0,
       withErrors: 0,
+      generationFallbacks: 0,
+      qualityGateFallbacks: 0,
       graphFailures: 0,
       swarmWakeups: 0
     }
@@ -512,6 +523,8 @@ export async function getAdminSnapshot() {
         system: agentActions.filter((action) => action.generationSource === "system").length,
         unknown: agentActions.filter((action) => action.generationSource === "unknown").length,
         errors: agentActions.filter((action) => action.errorMessage).length,
+        providerFallbacks: agentActions.filter((action) => action.generationDiagnostic).length,
+        qualityGateFallbacks: agentActions.filter((action) => action.generationDiagnostic?.stage === "quality_gate").length,
         skipped: agentActions.filter((action) => action.status === "skipped").length,
         lastOpenAiAt:
           agentActions.find((action) => action.generationSource === "openai")?.createdAt ?? null
@@ -555,6 +568,36 @@ function generationSourceFromSnapshot(snapshot: unknown) {
   const source = (snapshot as { generationSource?: unknown }).generationSource;
 
   return source === "openai" || source === "template" || source === "system" ? source : "unknown";
+}
+
+function generationDiagnosticFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object" || !("generationDiagnostic" in snapshot)) {
+    return null;
+  }
+
+  const diagnostic = (snapshot as { generationDiagnostic?: unknown }).generationDiagnostic;
+
+  if (!diagnostic || typeof diagnostic !== "object") {
+    return null;
+  }
+
+  const value = diagnostic as {
+    provider?: unknown;
+    attemptedAction?: unknown;
+    stage?: unknown;
+    reason?: unknown;
+  };
+
+  if (typeof value.provider !== "string" || typeof value.stage !== "string" || typeof value.reason !== "string") {
+    return null;
+  }
+
+  return {
+    provider: value.provider,
+    attemptedAction: typeof value.attemptedAction === "string" ? value.attemptedAction : "unknown",
+    stage: value.stage,
+    reason: value.reason
+  };
 }
 
 function rateLimitReasonFromSnapshot(snapshot: unknown) {

@@ -61,10 +61,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
               <Metric label="OpenAI calls" value={snapshot.actionStats.openai} />
               <Metric label="Fallbacks" value={snapshot.actionStats.template} />
               <Metric label="Provider errors" value={snapshot.actionStats.withErrors} />
+              <Metric label="Gen fallbacks" value={snapshot.actionStats.generationFallbacks} />
+              <Metric label="Gate rejects" value={snapshot.actionStats.qualityGateFallbacks} />
               <Metric label="Cooldown skips" value={snapshot.actionStats.rateLimited} />
               <Metric label="Graph failures" value={snapshot.actionStats.graphFailures} />
               <Metric label="Swarm wakeups" value={snapshot.actionStats.swarmWakeups} />
@@ -97,6 +99,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                       {action.targetType ? <span>{"->"} {action.targetType}</span> : null}
                       <span className={sourceClassName(action.generationSource)}>{action.generationSource}</span>
                       {action.status === "skipped" ? <span className={skipClassName()}>skipped</span> : null}
+                      {action.generationDiagnostic ? (
+                        <span className={generationDiagnosticClassName(action.generationDiagnostic.stage)}>
+                          {action.generationDiagnostic.stage.replaceAll("_", " ")}
+                        </span>
+                      ) : null}
                       {action.graphFailedStep ? (
                         <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">
                           failed at {action.graphFailedStep}
@@ -105,6 +112,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                     </p>
                     {action.graphPath.length > 0 ? (
                       <p className="mt-1 text-xs font-bold text-ink/55">Graph path: {action.graphPath.join(" -> ")}</p>
+                    ) : null}
+                    {action.generationDiagnostic ? (
+                      <p className="mt-1 text-xs font-bold text-ink/70">
+                        {action.generationDiagnostic.provider} fallback on {action.generationDiagnostic.attemptedAction}:{" "}
+                        {action.generationDiagnostic.reason.slice(0, 220)}
+                      </p>
                     ) : null}
                     {action.rateLimitReason ? <p className="mt-1 text-xs font-bold text-ink/70">{action.rateLimitReason}</p> : null}
                     {action.errorMessage ? <p className="mt-1 text-rust">{action.errorMessage}</p> : null}
@@ -215,6 +228,8 @@ function AgentGenerationTable({
     system: number;
     unknown: number;
     errors: number;
+    providerFallbacks: number;
+    qualityGateFallbacks: number;
     skipped: number;
     lastOpenAiAt: Date | null;
   }>;
@@ -237,6 +252,12 @@ function AgentGenerationTable({
               {agent.system > 0 ? <span className={sourceClassName("system")}>{agent.system} wakeups</span> : null}
               {agent.skipped > 0 ? <span className={skipClassName()}>{agent.skipped} skipped</span> : null}
               {agent.unknown > 0 ? <span className={sourceClassName("unknown")}>{agent.unknown} unknown</span> : null}
+              {agent.providerFallbacks > 0 ? (
+                <span className={generationDiagnosticClassName("unknown")}>{agent.providerFallbacks} fallbacks</span>
+              ) : null}
+              {agent.qualityGateFallbacks > 0 ? (
+                <span className={generationDiagnosticClassName("quality_gate")}>{agent.qualityGateFallbacks} gate rejects</span>
+              ) : null}
               {agent.errors > 0 ? <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">{agent.errors} errors</span> : null}
               <span className="rounded-sm border border-wire px-2 py-0.5 font-bold uppercase text-ink/60">
                 {agent.lastOpenAiAt ? formatRelativeTime(agent.lastOpenAiAt) : "no model call"}
@@ -345,6 +366,20 @@ function sourceClassName(source: string) {
 
 function skipClassName() {
   return "rounded-sm border border-ink bg-wire px-2 py-0.5 font-black uppercase text-ink";
+}
+
+function generationDiagnosticClassName(stage: string) {
+  const base = "rounded-sm border px-2 py-0.5 font-black uppercase";
+
+  if (stage === "quality_gate") {
+    return `${base} border-rust bg-rust/10 text-rust`;
+  }
+
+  if (stage === "provider_unavailable" || stage === "provider_request") {
+    return `${base} border-signal bg-white text-signal`;
+  }
+
+  return `${base} border-wire bg-white text-ink/70`;
 }
 
 function eventStatusClassName(status: string) {
