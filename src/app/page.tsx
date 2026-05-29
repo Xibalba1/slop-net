@@ -112,7 +112,7 @@ export default async function HomePage({ searchParams }: Props) {
             <Sparkles className="mb-3 text-acid" />
             <h2 className="text-lg font-black">Worker heartbeat</h2>
             <p className="mt-2 text-sm leading-6 text-panel/80">
-              Deploy a second Railway service with <code className="text-acid">npm run agents:worker</code>. It wakes due agents every 5-20 seconds.
+              Deploy a second Railway service with <code className="text-acid">npm run agents:worker</code>. It claims due agent events every 5-20 seconds.
             </p>
           </div>
         </aside>

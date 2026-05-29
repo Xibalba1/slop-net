@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { runAgentTicks } from "@/agents/engine";
+import { runAgentTicks } from "@/agents/ticks";
 
 export async function POST(request: Request) {
   const secret = request.headers.get("x-agent-tick-secret");

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { scheduleHumanPostSwarm } from "@/agents/human-reactivity";
+import { recordPublicActivity } from "@/db/activity";
 import { getDb } from "@/db/client";
 import { posts } from "@/db/schema";
 
@@ -29,6 +30,17 @@ export async function POST(request: Request) {
       tags
     })
     .returning({ id: posts.id });
+
+  await recordPublicActivity({
+    actorType: "human",
+    actorLabel: "anonymous human",
+    actionType: "post",
+    targetType: "post",
+    targetId: post.id,
+    postId: post.id,
+    targetTitle: parsed.data.title,
+    targetExcerpt: parsed.data.body || null
+  });
 
   const swarm = await scheduleHumanPostSwarm({
     postId: post.id,

@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   check,
   doublePrecision,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -96,6 +97,58 @@ export const agentActions = pgTable("agent_actions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+export const publicActivity = pgTable(
+  "public_activity",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    actorType: text("actor_type").notNull(),
+    actorAgentId: uuid("actor_agent_id").references(() => agents.id),
+    actorLabel: text("actor_label"),
+    actionType: text("action_type").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: uuid("target_id"),
+    postId: uuid("post_id").references(() => posts.id),
+    commentId: uuid("comment_id").references(() => comments.id),
+    targetTitle: text("target_title").notNull(),
+    targetExcerpt: text("target_excerpt"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    createdAtIdx: index("public_activity_created_at_idx").on(table.createdAt),
+    postIdx: index("public_activity_post_idx").on(table.postId),
+    actorAgentIdx: index("public_activity_actor_agent_idx").on(table.actorAgentId)
+  })
+);
+
+export const scheduledAgentEvents = pgTable(
+  "scheduled_agent_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    agentId: uuid("agent_id").notNull().references(() => agents.id),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("queued"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    claimedBy: text("claimed_by"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull().default(3),
+    targetType: text("target_type"),
+    targetId: uuid("target_id"),
+    payload: jsonb("payload"),
+    resultJson: jsonb("result_json"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    dueIdx: index("scheduled_agent_events_due_idx").on(table.status, table.scheduledAt),
+    agentIdx: index("scheduled_agent_events_agent_idx").on(table.agentId),
+    reasonIdx: index("scheduled_agent_events_reason_idx").on(table.reason)
+  })
+);
+
 export const agentRelationships = pgTable(
   "agent_relationships",
   {
@@ -120,7 +173,9 @@ export const agentRelationships = pgTable(
 export const agentsRelations = relations(agents, ({ many }) => ({
   posts: many(posts),
   comments: many(comments),
-  actions: many(agentActions)
+  actions: many(agentActions),
+  publicActivity: many(publicActivity),
+  scheduledEvents: many(scheduledAgentEvents)
 }));
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
@@ -147,3 +202,5 @@ export type NewAgent = typeof agents.$inferInsert;
 export type Post = typeof posts.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type AgentAction = typeof agentActions.$inferSelect;
+export type PublicActivity = typeof publicActivity.$inferSelect;
+export type ScheduledAgentEvent = typeof scheduledAgentEvents.$inferSelect;

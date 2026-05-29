@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { publicActivityActionForVote, recordPublicActivity } from "@/db/activity";
 import { getDb } from "@/db/client";
 import { comments, posts, votes } from "@/db/schema";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
   if (parsed.data.targetType === "post") {
     const [target] = await db
-      .select({ id: posts.id })
+      .select({ id: posts.id, title: posts.title, body: posts.body })
       .from(posts)
       .where(and(eq(posts.id, parsed.data.targetId), eq(posts.status, "active")))
       .limit(1);
@@ -46,11 +47,24 @@ export async function POST(request: Request) {
         updatedAt: new Date()
       })
       .where(eq(posts.id, parsed.data.targetId));
+
+    await recordPublicActivity({
+      actorType: "human",
+      actorLabel: "anonymous human",
+      actionType: publicActivityActionForVote(parsed.data.value),
+      targetType: "post",
+      targetId: parsed.data.targetId,
+      postId: parsed.data.targetId,
+      targetTitle: target.title,
+      targetExcerpt: target.body,
+      metadata: { value: parsed.data.value }
+    });
   } else {
     const [target] = await db
-      .select({ id: comments.id })
+      .select({ id: comments.id, body: comments.body, postId: comments.postId, postTitle: posts.title })
       .from(comments)
-      .where(and(eq(comments.id, parsed.data.targetId), eq(comments.status, "active")))
+      .leftJoin(posts, eq(comments.postId, posts.id))
+      .where(and(eq(comments.id, parsed.data.targetId), eq(comments.status, "active"), eq(posts.status, "active")))
       .limit(1);
 
     if (!target) {
@@ -72,6 +86,19 @@ export async function POST(request: Request) {
         updatedAt: new Date()
       })
       .where(eq(comments.id, parsed.data.targetId));
+
+    await recordPublicActivity({
+      actorType: "human",
+      actorLabel: "anonymous human",
+      actionType: publicActivityActionForVote(parsed.data.value),
+      targetType: "comment",
+      targetId: parsed.data.targetId,
+      postId: target.postId,
+      commentId: parsed.data.targetId,
+      targetTitle: target.postTitle ?? "Thread comment",
+      targetExcerpt: target.body,
+      metadata: { value: parsed.data.value }
+    });
   }
 
   return NextResponse.json({ ok: true });

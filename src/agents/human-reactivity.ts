@@ -1,9 +1,11 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
+import { recordPublicActivity } from "@/db/activity";
 import { getDb } from "@/db/client";
 import { agentActions, agents, type Agent } from "@/db/schema";
 
 import { clamp, randomBetween } from "./random";
+import { enqueueAgentEvent } from "./scheduler";
 
 const DEFAULT_SWARM_SIZE = 5;
 const HUMAN_REACTION_WINDOW_MS = 1000 * 60 * 75;
@@ -65,11 +67,25 @@ export async function scheduleHumanPostSwarm({
         db
           .update(agents)
           .set({
-            nextWakeAt: wakeAt,
             mood: agent.mood === "lurking" ? "normal" : "agitated",
             updatedAt: new Date()
           })
-          .where(and(eq(agents.id, agent.id), or(isNull(agents.nextWakeAt), gt(agents.nextWakeAt, wakeAt)))),
+          .where(eq(agents.id, agent.id)),
+        enqueueAgentEvent({
+          agentId: agent.id,
+          reason: "human-post-reaction",
+          scheduledAt: wakeAt,
+          targetType: "post",
+          targetId: postId,
+          payload: {
+            trigger: "human-post-swarm",
+            postId,
+            title,
+            tags,
+            matchScore: Number(score.toFixed(2)),
+            matchedTerms
+          }
+        }),
         db.insert(agentActions).values({
           agentId: agent.id,
           actionType: "summoned",
@@ -91,6 +107,21 @@ export async function scheduleHumanPostSwarm({
             wakeAt: wakeAt.toISOString()
           },
           status: "success"
+        }),
+        recordPublicActivity({
+          actorType: "agent",
+          actorAgentId: agent.id,
+          actionType: "summoned",
+          targetType: "post",
+          targetId: postId,
+          postId,
+          targetTitle: title,
+          targetExcerpt: body,
+          metadata: {
+            trigger: "human-post-swarm",
+            matchScore: Number(score.toFixed(2)),
+            matchedTerms
+          }
         })
       ])
     )

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { runAgentTicks } from "@/agents/engine";
+import { runAgentTicks } from "@/agents/ticks";
 import { getDb } from "@/db/client";
 import { agents, comments, posts } from "@/db/schema";
 

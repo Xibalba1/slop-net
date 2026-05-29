@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { agentRoster } from "@/agents/roster";
 import { getDb } from "./client";
-import { agentActions, agentRelationships, agents, comments, posts, votes } from "./schema";
+import { agentActions, agentRelationships, agents, comments, posts, publicActivity, scheduledAgentEvents, votes } from "./schema";
 import { computeDerangement } from "@/lib/derangement";
 import { computeThreadHeat } from "@/lib/thread-heat";
 
@@ -68,6 +68,32 @@ export async function getFeed(sort: FeedSort = "hot") {
       derangement: computeDerangement({ ...post, heat })
     };
   });
+}
+
+export async function getActivityFeed(limit = 100) {
+  const db = getDb();
+
+  return db
+    .select({
+      id: publicActivity.id,
+      actorType: publicActivity.actorType,
+      actorLabel: publicActivity.actorLabel,
+      actionType: publicActivity.actionType,
+      targetType: publicActivity.targetType,
+      targetId: publicActivity.targetId,
+      postId: publicActivity.postId,
+      commentId: publicActivity.commentId,
+      targetTitle: publicActivity.targetTitle,
+      targetExcerpt: publicActivity.targetExcerpt,
+      metadata: publicActivity.metadata,
+      createdAt: publicActivity.createdAt,
+      actorHandle: agents.handle,
+      actorArchetype: agents.archetype
+    })
+    .from(publicActivity)
+    .leftJoin(agents, eq(publicActivity.actorAgentId, agents.id))
+    .orderBy(desc(publicActivity.createdAt))
+    .limit(limit);
 }
 
 export async function getThread(postId: string) {
@@ -326,7 +352,7 @@ export async function getAdminSnapshot() {
   const sourceAgents = alias(agents, "source_agents");
   const targetAgents = alias(agents, "target_agents");
 
-  const [recentPosts, recentComments, roster, actionRows, relationshipRows] = await Promise.all([
+  const [recentPosts, recentComments, roster, actionRows, relationshipRows, scheduledRows] = await Promise.all([
     db.select().from(posts).orderBy(desc(posts.createdAt)).limit(20),
     db.select().from(comments).orderBy(desc(comments.createdAt)).limit(20),
     db.select().from(agents).orderBy(agents.handle),
@@ -364,7 +390,27 @@ export async function getAdminSnapshot() {
       .leftJoin(sourceAgents, eq(agentRelationships.agentId, sourceAgents.id))
       .leftJoin(targetAgents, eq(agentRelationships.otherAgentId, targetAgents.id))
       .orderBy(desc(sql<number>`abs(${agentRelationships.affinityScore})`), desc(agentRelationships.lastInteractionAt))
-      .limit(24)
+      .limit(24),
+    db
+      .select({
+        id: scheduledAgentEvents.id,
+        reason: scheduledAgentEvents.reason,
+        status: scheduledAgentEvents.status,
+        scheduledAt: scheduledAgentEvents.scheduledAt,
+        claimedAt: scheduledAgentEvents.claimedAt,
+        completedAt: scheduledAgentEvents.completedAt,
+        attempts: scheduledAgentEvents.attempts,
+        maxAttempts: scheduledAgentEvents.maxAttempts,
+        targetType: scheduledAgentEvents.targetType,
+        targetId: scheduledAgentEvents.targetId,
+        lastError: scheduledAgentEvents.lastError,
+        createdAt: scheduledAgentEvents.createdAt,
+        agentHandle: agents.handle
+      })
+      .from(scheduledAgentEvents)
+      .leftJoin(agents, eq(scheduledAgentEvents.agentId, agents.id))
+      .orderBy(desc(scheduledAgentEvents.createdAt))
+      .limit(40)
   ]);
 
   const actions = actionRows.map((action) => ({
@@ -413,6 +459,29 @@ export async function getAdminSnapshot() {
   const latestProviderError =
     actions.find((action) => action.errorMessage?.includes("OpenAI"))?.errorMessage ?? null;
 
+  const scheduledStats = scheduledRows.reduce(
+    (stats, event) => {
+      if (event.status === "queued") {
+        stats.queued += 1;
+      } else if (event.status === "claimed") {
+        stats.claimed += 1;
+      } else if (event.status === "completed") {
+        stats.completed += 1;
+      } else if (event.status === "failed") {
+        stats.failed += 1;
+      } else if (event.status === "skipped") {
+        stats.skipped += 1;
+      }
+
+      if (event.reason === "human-post-reaction") {
+        stats.humanPostReactions += 1;
+      }
+
+      return stats;
+    },
+    { queued: 0, claimed: 0, completed: 0, failed: 0, skipped: 0, humanPostReactions: 0 }
+  );
+
   const agentGenerationStats = roster
     .map((agent) => {
       const agentActions = actions.filter((action) => action.agentId === agent.id);
@@ -439,6 +508,8 @@ export async function getAdminSnapshot() {
     roster,
     actions,
     actionStats,
+    scheduledStats,
+    scheduledEvents: scheduledRows,
     latestProviderError,
     agentGenerationStats,
     relationships: relationshipRows

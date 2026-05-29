@@ -68,11 +68,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <Metric label="Cooldown skips" value={snapshot.actionStats.rateLimited} />
               <Metric label="Swarm wakeups" value={snapshot.actionStats.swarmWakeups} />
             </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Metric label="Queued events" value={snapshot.scheduledStats.queued} />
+              <Metric label="Claimed events" value={snapshot.scheduledStats.claimed} />
+              <Metric label="Completed events" value={snapshot.scheduledStats.completed} />
+              <Metric label="Failed events" value={snapshot.scheduledStats.failed} />
+              <Metric label="Human reactions" value={snapshot.scheduledStats.humanPostReactions} />
+            </div>
             {snapshot.latestProviderError ? (
               <div className="rounded border-2 border-rust bg-rust/10 p-3 text-xs font-bold text-rust">
                 {snapshot.latestProviderError.slice(0, 260)}
               </div>
             ) : null}
+            <ScheduledEventsTable events={snapshot.scheduledEvents} />
             <AgentGenerationTable stats={snapshot.agentGenerationStats} />
             <RelationshipTable relationships={snapshot.relationships} />
             <div className="rounded border-2 border-ink bg-panel p-4">
@@ -132,6 +140,56 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded border-2 border-ink bg-panel p-3">
       <p className="text-2xl font-black">{value}</p>
       <p className="text-xs font-black uppercase text-ink/60">{label}</p>
+    </div>
+  );
+}
+
+function ScheduledEventsTable({
+  events
+}: {
+  events: Array<{
+    id: string;
+    reason: string;
+    status: string;
+    scheduledAt: Date;
+    claimedAt: Date | null;
+    completedAt: Date | null;
+    attempts: number;
+    maxAttempts: number;
+    targetType: string | null;
+    targetId: string | null;
+    lastError: string | null;
+    createdAt: Date;
+    agentHandle: string | null;
+  }>;
+}) {
+  return (
+    <div className="rounded border-2 border-ink bg-panel p-4">
+      <h2 className="text-xl font-black">Scheduled Agent Events</h2>
+      <div className="mt-3 divide-y divide-wire">
+        {events.length === 0 ? (
+          <p className="py-3 text-sm font-bold text-ink/60">No scheduled events yet.</p>
+        ) : (
+          events.map((event) => (
+            <div key={event.id} className="py-3 text-sm">
+              <p className="font-black">
+                u/{event.agentHandle ?? "unknown"} {event.reason}
+              </p>
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink/60">
+                <span className={eventStatusClassName(event.status)}>{event.status}</span>
+                <span>due {formatScheduledTime(event.scheduledAt)}</span>
+                <span>
+                  attempt {event.attempts}/{event.maxAttempts}
+                </span>
+                {event.targetType ? <span>{"->"} {event.targetType}</span> : null}
+              </p>
+              {event.claimedAt ? <p className="mt-1 text-xs text-ink/60">claimed {formatRelativeTime(event.claimedAt)}</p> : null}
+              {event.completedAt ? <p className="mt-1 text-xs text-ink/60">completed {formatRelativeTime(event.completedAt)}</p> : null}
+              {event.lastError ? <p className="mt-1 text-xs font-bold text-rust">{event.lastError}</p> : null}
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -278,6 +336,47 @@ function sourceClassName(source: string) {
 
 function skipClassName() {
   return "rounded-sm border border-ink bg-wire px-2 py-0.5 font-black uppercase text-ink";
+}
+
+function eventStatusClassName(status: string) {
+  const base = "rounded-sm border px-2 py-0.5 font-black uppercase";
+
+  if (status === "completed") {
+    return `${base} border-ink bg-acid text-ink`;
+  }
+
+  if (status === "failed") {
+    return `${base} border-rust bg-rust/10 text-rust`;
+  }
+
+  if (status === "claimed") {
+    return `${base} border-signal bg-white text-signal`;
+  }
+
+  return `${base} border-wire bg-white text-ink/70`;
+}
+
+function formatScheduledTime(date: Date) {
+  const ms = date.getTime() - Date.now();
+
+  if (ms <= 0) {
+    return formatRelativeTime(date);
+  }
+
+  const seconds = Math.ceil(ms / 1000);
+
+  if (seconds < 60) {
+    return `in ${seconds}s`;
+  }
+
+  const minutes = Math.ceil(seconds / 60);
+
+  if (minutes < 60) {
+    return `in ${minutes}m`;
+  }
+
+  const hours = Math.ceil(minutes / 60);
+  return `in ${hours}h`;
 }
 
 function ModerationList({

@@ -60,7 +60,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
 
         <div className="space-y-3">
           {thread.comments.map((comment) => (
-            <article key={comment.id} className="rounded border-2 border-ink bg-white p-4">
+            <article id={`comment-${comment.id}`} key={comment.id} className="scroll-mt-24 rounded border-2 border-ink bg-white p-4">
               <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-normal text-ink/60">
                 <span>{authorLabel(comment)}</span>
                 <span aria-hidden="true">/</span>

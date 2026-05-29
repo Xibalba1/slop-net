@@ -1,6 +1,7 @@
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 
 import { getDb } from "@/db/client";
+import { publicActivityActionForVote, recordPublicActivity } from "@/db/activity";
 import { agentActions, agents, comments, posts, votes, type Agent } from "@/db/schema";
 
 import { buildContext, type AgentContext } from "./context";
@@ -58,23 +59,15 @@ type GeneratedAction = GeneratedDecision & {
   status?: AgentActionStatus;
 };
 
-export async function getDueAgents(limit = 5) {
-  const db = getDb();
+type AgentWakeTrigger = {
+  scheduledEventId?: string;
+  reason?: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  payload?: unknown;
+};
 
-  return db
-    .select()
-    .from(agents)
-    .where(
-      and(
-        eq(agents.status, "active"),
-        or(isNull(agents.nextWakeAt), lte(agents.nextWakeAt, new Date()))
-      )
-    )
-    .orderBy(agents.nextWakeAt)
-    .limit(limit);
-}
-
-export async function runAgentWake(agent: Agent) {
+export async function runAgentWake(agent: Agent, wakeTrigger?: AgentWakeTrigger) {
   const db = getDb();
   const context = await buildContext(agent);
   const generated = await generateDecision(agent, context);
@@ -112,6 +105,8 @@ export async function runAgentWake(agent: Agent) {
     inputSnapshot: {
       ...context,
       generationSource: generated.source,
+      wakeTrigger,
+      trigger: wakeTrigger?.reason,
       rateLimit
     },
     outputJson: decision,
@@ -129,21 +124,7 @@ export async function runAgentWake(agent: Agent) {
     })
     .where(eq(agents.id, agent.id));
 
-  return { decision, source: generated.source, status, errorMessage };
-}
-
-export async function runAgentTicks(limit = 5) {
-  const dueAgents = await getDueAgents(limit);
-  const results = [];
-
-  for (const agent of dueAgents) {
-    results.push({
-      agent: agent.handle,
-      ...(await runAgentWake(agent))
-    });
-  }
-
-  return results;
+  return { decision, source: generated.source, status, errorMessage, nextWakeAt };
 }
 
 async function generateDecision(agent: Agent, context: AgentContext): Promise<GeneratedAction> {
@@ -335,12 +316,23 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
       })
       .returning({ id: posts.id });
 
+    await recordPublicActivity({
+      actorType: "agent",
+      actorAgentId: agent.id,
+      actionType: "post",
+      targetType: "post",
+      targetId: post.id,
+      postId: post.id,
+      targetTitle: decision.title,
+      targetExcerpt: decision.body
+    });
+
     return { targetType: "post", targetId: post.id };
   }
 
   if (decision.action === "comment") {
     const [target] = await db
-      .select({ id: posts.id, authorAgentId: posts.authorAgentId })
+      .select({ id: posts.id, title: posts.title, authorAgentId: posts.authorAgentId })
       .from(posts)
       .where(and(eq(posts.id, decision.postId), eq(posts.status, "active")))
       .limit(1);
@@ -374,23 +366,84 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
       interaction: "comment"
     });
 
+    await recordPublicActivity({
+      actorType: "agent",
+      actorAgentId: agent.id,
+      actionType: "comment",
+      targetType: "comment",
+      targetId: comment.id,
+      postId: decision.postId,
+      commentId: comment.id,
+      targetTitle: target.title,
+      targetExcerpt: decision.body
+    });
+
     return { targetType: "comment", targetId: comment.id };
   }
 
-  const target =
-    decision.targetType === "post"
-      ? await db
-          .select({ id: posts.id, authorAgentId: posts.authorAgentId })
-          .from(posts)
-          .where(and(eq(posts.id, decision.targetId), eq(posts.status, "active")))
-          .limit(1)
-      : await db
-          .select({ id: comments.id, authorAgentId: comments.authorAgentId })
-          .from(comments)
-          .where(and(eq(comments.id, decision.targetId), eq(comments.status, "active")))
-          .limit(1);
+  if (decision.targetType === "post") {
+    const [target] = await db
+      .select({ id: posts.id, title: posts.title, body: posts.body, authorAgentId: posts.authorAgentId })
+      .from(posts)
+      .where(and(eq(posts.id, decision.targetId), eq(posts.status, "active")))
+      .limit(1);
 
-  if (!target[0]) {
+    if (!target) {
+      throw new Error("Agent tried to vote on missing or inactive content.");
+    }
+
+    await db.insert(votes).values({
+      agentId: agent.id,
+      voterType: "agent",
+      targetType: decision.targetType,
+      targetId: decision.targetId,
+      value: decision.value
+    });
+
+    await db
+      .update(posts)
+      .set({
+        score: sql`${posts.score} + ${decision.value}`,
+        voteCount: sql`${posts.voteCount} + 1`,
+        updatedAt: new Date()
+      })
+      .where(eq(posts.id, decision.targetId));
+
+    await recordRelationshipInteraction({
+      agentId: agent.id,
+      otherAgentId: target.authorAgentId,
+      interaction: decision.value === 1 ? "upvote" : "downvote"
+    });
+
+    await recordPublicActivity({
+      actorType: "agent",
+      actorAgentId: agent.id,
+      actionType: publicActivityActionForVote(decision.value),
+      targetType: "post",
+      targetId: decision.targetId,
+      postId: decision.targetId,
+      targetTitle: target.title,
+      targetExcerpt: target.body,
+      metadata: { value: decision.value }
+    });
+
+    return { targetType: decision.targetType, targetId: decision.targetId };
+  }
+
+  const [target] = await db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      postId: comments.postId,
+      authorAgentId: comments.authorAgentId,
+      postTitle: posts.title
+    })
+    .from(comments)
+    .leftJoin(posts, eq(comments.postId, posts.id))
+    .where(and(eq(comments.id, decision.targetId), eq(comments.status, "active"), eq(posts.status, "active")))
+    .limit(1);
+
+  if (!target) {
     throw new Error("Agent tried to vote on missing or inactive content.");
   }
 
@@ -402,30 +455,32 @@ async function executeDecision(agent: Agent, decision: AgentDecision) {
     value: decision.value
   });
 
-  if (decision.targetType === "post") {
-    await db
-      .update(posts)
-      .set({
-        score: sql`${posts.score} + ${decision.value}`,
-        voteCount: sql`${posts.voteCount} + 1`,
-        updatedAt: new Date()
-      })
-      .where(eq(posts.id, decision.targetId));
-  } else {
-    await db
-      .update(comments)
-      .set({
-        score: sql`${comments.score} + ${decision.value}`,
-        voteCount: sql`${comments.voteCount} + 1`,
-        updatedAt: new Date()
-      })
-      .where(eq(comments.id, decision.targetId));
-  }
+  await db
+    .update(comments)
+    .set({
+      score: sql`${comments.score} + ${decision.value}`,
+      voteCount: sql`${comments.voteCount} + 1`,
+      updatedAt: new Date()
+    })
+    .where(eq(comments.id, decision.targetId));
 
   await recordRelationshipInteraction({
     agentId: agent.id,
-    otherAgentId: target[0].authorAgentId,
+    otherAgentId: target.authorAgentId,
     interaction: decision.value === 1 ? "upvote" : "downvote"
+  });
+
+  await recordPublicActivity({
+    actorType: "agent",
+    actorAgentId: agent.id,
+    actionType: publicActivityActionForVote(decision.value),
+    targetType: "comment",
+    targetId: decision.targetId,
+    postId: target.postId,
+    commentId: decision.targetId,
+    targetTitle: target.postTitle ?? "Thread comment",
+    targetExcerpt: target.body,
+    metadata: { value: decision.value }
   });
 
   return { targetType: decision.targetType, targetId: decision.targetId };

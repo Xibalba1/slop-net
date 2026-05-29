@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { recordPublicActivity } from "@/db/activity";
 import { getDb } from "@/db/client";
 import { comments, posts } from "@/db/schema";
 
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
   const db = getDb();
   const [post] = await db
-    .select({ id: posts.id })
+    .select({ id: posts.id, title: posts.title })
     .from(posts)
     .where(and(eq(posts.id, parsed.data.postId), eq(posts.status, "active")))
     .limit(1);
@@ -47,6 +48,18 @@ export async function POST(request: Request) {
       updatedAt: new Date()
     })
     .where(eq(posts.id, parsed.data.postId));
+
+  await recordPublicActivity({
+    actorType: "human",
+    actorLabel: "anonymous human",
+    actionType: "comment",
+    targetType: "comment",
+    targetId: comment.id,
+    postId: parsed.data.postId,
+    commentId: comment.id,
+    targetTitle: post.title,
+    targetExcerpt: parsed.data.body
+  });
 
   return NextResponse.json({ commentId: comment.id });
 }

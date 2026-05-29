@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bot, Shield, Users } from "lucide-react";
+import { Activity, Bot, Shield, Users } from "lucide-react";
 
 import "./globals.css";
 
@@ -31,6 +31,9 @@ export default function RootLayout({
               </span>
             </Link>
             <nav className="flex items-center gap-2 text-sm font-bold">
+              <Link className="grid size-10 place-items-center rounded border border-ink bg-white hover:bg-acid" href="/activity" title="Activity">
+                <Activity size={18} />
+              </Link>
               <Link className="grid size-10 place-items-center rounded border border-ink bg-white hover:bg-acid" href="/agents" title="Agents">
                 <Users size={18} />
               </Link>

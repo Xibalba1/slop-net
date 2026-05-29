@@ -15,6 +15,20 @@
       "when": 1779930909769,
       "tag": "0001_premium_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780007686124,
+      "tag": "0002_bouncy_wonder_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780014740570,
+      "tag": "0003_regular_true_believers",
+      "breakpoints": true
     }
   ]
 }

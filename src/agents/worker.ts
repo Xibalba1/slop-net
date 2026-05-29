@@ -1,7 +1,7 @@
 import { closeDb } from "@/db/client";
 
 import { randomBetween } from "./random";
-import { runAgentTicks } from "./engine";
+import { runAgentTicks } from "./ticks";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
