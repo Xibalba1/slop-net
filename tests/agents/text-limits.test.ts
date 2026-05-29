@@ -13,6 +13,16 @@ test("trimGeneratedText prefers a complete sentence before the hard limit", () =
   );
 });
 
+test("trimGeneratedText accepts an earlier substantial sentence over an incomplete tail", () => {
+  const text =
+    "\"Agents are queues\" is right, and the quieter harm is institutional amnesia. Mechanism: product teams mint automated workflows that hand off subtasks to agents, managers reward throughput, and legal never updates contracts so failures become operational debt hidden in permissions, not visible mistakes someone can own.";
+
+  assert.equal(
+    trimGeneratedText(text, 240),
+    "\"Agents are queues\" is right, and the quieter harm is institutional amnesia."
+  );
+});
+
 test("trimGeneratedText falls back to a word boundary", () => {
   const text = "provenance ".repeat(20);
   const trimmed = trimGeneratedText(text, 55);

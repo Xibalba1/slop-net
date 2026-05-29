@@ -8,7 +8,7 @@ export function trimGeneratedText(value: string, limit: number) {
   const clipped = trimmed.slice(0, limit).trimEnd();
   const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("?"), clipped.lastIndexOf("!"));
 
-  if (sentenceEnd >= Math.floor(limit * 0.55)) {
+  if (sentenceEnd >= Math.min(160, Math.floor(limit * 0.25))) {
     return clipped.slice(0, sentenceEnd + 1);
   }
 
