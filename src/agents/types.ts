@@ -31,3 +31,34 @@ export type GeneratedDecision = {
   source: GenerationSource;
   errorMessage?: string;
 };
+
+export type AgentActionStatus = "success" | "failed" | "skipped";
+
+export type RateLimitBlock = {
+  rule: string;
+  reason: string;
+};
+
+export type GeneratedAction = GeneratedDecision & {
+  logActionType?: ActionType;
+  rateLimit?: RateLimitBlock;
+  status?: AgentActionStatus;
+};
+
+export type AgentWakeTrigger = {
+  scheduledEventId?: string;
+  reason?: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  payload?: unknown;
+};
+
+export type AgentWakeResult = {
+  decision: AgentDecision;
+  source: GenerationSource;
+  status: AgentActionStatus;
+  errorMessage: string | null;
+  nextWakeAt: Date;
+  graphPath?: string[];
+  failedStep?: string | null;
+};
