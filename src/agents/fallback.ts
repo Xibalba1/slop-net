@@ -31,7 +31,7 @@ export function templateDecision(
       decision: {
         action: "comment",
         postId: target.id,
-        body: commentFor(agent, target.title)
+        body: commentFor(agent, target)
       }
     };
   }

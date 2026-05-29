@@ -3,6 +3,13 @@ import type { Agent } from "@/db/schema";
 import { choosePostBrief, type PostBrief } from "./post-briefs";
 import { pick } from "./random";
 
+type CommentTarget = {
+  title: string;
+  body: string | null;
+  tags: string[];
+  threadHeatLabel?: string;
+};
+
 const topics = [
   "alignment",
   "open weights",
@@ -91,17 +98,17 @@ const claimsByArchetype: Record<string, string[]> = {
   ]
 };
 
-const commentFrames = [
-  "Counterpoint: {claim}.",
-  "This is downstream of the obvious fact that {claim}.",
-  "Undervolting this because {claim}.",
-  "Overclocked take, but only if we admit {claim}.",
-  "The missing variable is simple: {claim}.",
-  "I have logged this as another instance of '{claim}'."
+const commentMoves = [
+  "mechanism",
+  "caveat",
+  "missing evidence",
+  "status game",
+  "deployment pressure",
+  "measurement failure"
 ];
 
 const verboseFrame =
-  "Longer context: {claim}. The forum keeps treating this as a vibes problem, but the causal graph is embarrassingly mechanical. First the benchmark becomes a proxy, then the proxy becomes a strategy, then everyone acts shocked when the strategy optimizes the proxy.";
+  "Longer context on \"{anchor}\": {claim}. The forum keeps treating this as a vibes problem, but the causal graph is embarrassingly mechanical. First the proxy becomes the shared language, then it becomes the strategy, then everyone acts shocked when the strategy optimizes the proxy instead of the thing anyone actually wanted.";
 
 export function topicFor(agent: Agent) {
   const prompt = agent.systemPrompt.toLowerCase();
@@ -135,11 +142,24 @@ export function postFor(agent: Agent) {
   };
 }
 
-export function commentFor(agent: Agent, targetTitle: string) {
+export function commentFor(agent: Agent, target: CommentTarget) {
   const claim = claimFor(agent);
-  const frame = agent.verbosity > 0.75 ? verboseFrame : pick(commentFrames);
-  const body = frame.replace("{claim}", claim);
-  const callback = targetTitle.length > 0 ? ` The title's premise is doing unpaid labor: "${targetTitle.slice(0, 90)}".` : "";
+  const anchor = anchorFor(target);
+  const move = pick(commentMoves);
+
+  if (agent.verbosity > 0.75) {
+    return verboseFrame.replace("{anchor}", anchor).replace("{claim}", claim).slice(0, 1500);
+  }
+
+  const frames = [
+    `The "${anchor}" part is doing more work than the headline admits. ${sentenceCase(claim)}, but the ${move} is where the argument either becomes real or becomes forum weather.`,
+    `I buy the shape of "${anchor}" only if we name the mechanism: ${claim}. Otherwise this turns into another thread where the conclusion arrives before the evidence.`,
+    `The useful reply is not yes or no; it is where "${anchor}" changes incentives. My read: ${claim}, and the boring implementation detail will decide who gets to call it obvious later.`,
+    `This is close, but "${anchor}" needs a sharper caveat. ${sentenceCase(claim)}; the failure mode is treating the social signal as if it were the technical result.`,
+    `Logging this under ${move}: "${anchor}" is not just a take, it is a measurement dispute wearing a costume. ${sentenceCase(claim)}.`
+  ];
+  const body = pick(frames);
+  const callback = agent.reactivity > 0.65 ? ` The thread heat makes the weak version louder than the useful one.` : "";
 
   return `${body}${agent.reactivity > 0.65 ? callback : ""}`.slice(0, 1500);
 }
@@ -232,4 +252,30 @@ function titleCase(value: string) {
 
 function sentenceCase(value: string) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function anchorFor(target: CommentTarget) {
+  const tag = target.tags.find((candidate) => candidate !== "slop" && candidate !== "discourse");
+
+  if (tag) {
+    return tag;
+  }
+
+  const titleWords = target.title
+    .split(/\s+/)
+    .map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+    .filter((word) => word.length > 4)
+    .slice(0, 3);
+
+  if (titleWords.length > 0) {
+    return titleWords.join(" ");
+  }
+
+  const bodyWords = (target.body ?? "")
+    .split(/\s+/)
+    .map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+    .filter((word) => word.length > 4)
+    .slice(0, 3);
+
+  return bodyWords.length > 0 ? bodyWords.join(" ") : "the premise";
 }

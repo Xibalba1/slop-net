@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Agent } from "@/db/schema";
 
 import type { AgentContext } from "./context";
+import { assertCommentQuality, assertPostQuality } from "./content-quality";
 import { choosePostBrief, type PostMode } from "./post-briefs";
 import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
 
@@ -272,7 +273,9 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       "Fresh human posts include higher reactionPriority. Prefer high reactionPriority when the topic fits your persona.",
       "Posts with higher threadHeat are socially active. Prefer heated threads for comments when you have a distinct angle.",
       "Avoid repeating existing titles or comment wording.",
-      "Comments should feel like an internet reply, not a policy memo."
+      "Comments should feel like an internet reply, not a policy memo.",
+      "Comments must make a thread-specific move: quote or reuse a concrete term from the target title/body, then add a distinct reason, caveat, mechanism, or objection.",
+      "Do not write generic agreement, generic disagreement, stock persona slogans, or buzzword stacks."
     ]
   };
 }
@@ -292,7 +295,15 @@ function normalizeDecision(
     const title = payload.title.trim().slice(0, 180);
     const body = payload.body.trim().slice(0, bodyLimit(agent, "post"));
 
-    enforcePostQuality({ title, body, postType });
+    assertPostQuality({
+      title,
+      body,
+      postType,
+      recentPosts: context.recentPosts.map((post) => ({
+        title: post.title,
+        body: post.body
+      }))
+    });
 
     return {
       action: "post",
@@ -303,17 +314,25 @@ function normalizeDecision(
   }
 
   if (payload.action === "comment") {
-    const postIds = new Set(context.recentPosts.map((post) => post.id));
+    const targetPost = context.recentPosts.find((post) => post.id === payload.postId);
 
-    if (!postIds.has(payload.postId)) {
+    if (!targetPost) {
       throw new Error("OpenAI chose a missing post for comment.");
     }
+
+    const body = payload.body.trim().slice(0, bodyLimit(agent, "comment"));
+
+    assertCommentQuality({
+      body,
+      targetPost,
+      recentCommentSnippets: context.recentComments.map((comment) => comment.body)
+    });
 
     return {
       action: "comment",
       postId: payload.postId,
       parentCommentId: null,
-      body: payload.body.trim().slice(0, bodyLimit(agent, "comment"))
+      body
     };
   }
 
@@ -369,111 +388,6 @@ function postTypeFromPayload(postType: DecisionPayload["postType"]): PostMode {
     postType === "shitpost"
     ? postType
     : "analysis";
-}
-
-function enforcePostQuality({
-  title,
-  body,
-  postType
-}: {
-  title: string;
-  body: string;
-  postType: PostMode;
-}) {
-  const words = body.split(/\s+/).filter(Boolean);
-  const lower = `${title} ${body}`.toLowerCase();
-  const shallowPhrases = [
-    "everyone is pretending this is normal",
-    "the discourse cannot handle",
-    "this changes everything",
-    "nobody is ready",
-    "people are not ready",
-    "just a tool",
-    "wake up",
-    "hot take"
-  ];
-
-  if (postType === "shitpost") {
-    if (words.length < 12 || title.split(/\s+/).length < 3) {
-      throw new Error("OpenAI returned an underspecified shitpost.");
-    }
-
-    return;
-  }
-
-  const mechanismWords = [
-    "because",
-    "tradeoff",
-    "incentive",
-    "latency",
-    "failure",
-    "cost",
-    "risk",
-    "audit",
-    "deployment",
-    "measurement",
-    "evidence",
-    "leverage",
-    "status",
-    "trust",
-    "provenance",
-    "authenticity",
-    "institution",
-    "bureaucracy",
-    "liability",
-    "permission",
-    "access",
-    "counter",
-    "however",
-    "while",
-    "unless"
-  ];
-  const uniqueWords = new Set(words.map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, "")));
-  const mechanismHits = mechanismWords.filter((word) => lower.includes(word)).length;
-  const socialFrameHits = [
-    "power",
-    "status",
-    "trust",
-    "provenance",
-    "authenticity",
-    "institution",
-    "bureaucracy",
-    "leverage",
-    "accountability",
-    "consent",
-    "credit",
-    "signal",
-    "incentive",
-    "access"
-  ].filter((word) => lower.includes(word)).length;
-  const reframeHit =
-    lower.includes("not ") ||
-    lower.includes(" less ") ||
-    lower.includes(" more ") ||
-    lower.includes("but ") ||
-    lower.includes("the real ") ||
-    lower.includes("surface ");
-  const shallowHit = shallowPhrases.some((phrase) => lower.includes(phrase));
-
-  if (words.length < 80) {
-    throw new Error("OpenAI returned an informative post that was too short.");
-  }
-
-  if (uniqueWords.size < 45) {
-    throw new Error("OpenAI returned an informative post with too little specific detail.");
-  }
-
-  if (mechanismHits < 2) {
-    throw new Error("OpenAI returned an informative post without enough tradeoff or mechanism language.");
-  }
-
-  if (socialFrameHits < 1 || !reframeHit) {
-    throw new Error("OpenAI returned an informative post without a clear social frame or reframe.");
-  }
-
-  if (shallowHit && words.length < 120) {
-    throw new Error("OpenAI returned a shallow stock hot-take frame.");
-  }
 }
 
 function extractOutputText(payload: unknown) {
