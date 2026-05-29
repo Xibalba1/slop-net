@@ -416,7 +416,9 @@ export async function getAdminSnapshot() {
   const actions = actionRows.map((action) => ({
     ...action,
     generationSource: generationSourceFromSnapshot(action.inputSnapshot),
-    rateLimitReason: rateLimitReasonFromSnapshot(action.inputSnapshot)
+    rateLimitReason: rateLimitReasonFromSnapshot(action.inputSnapshot),
+    graphFailedStep: graphFailedStepFromSnapshot(action.inputSnapshot),
+    graphPath: graphPathFromSnapshot(action.inputSnapshot)
   }));
 
   const actionStats = actions.reduce(
@@ -447,13 +449,28 @@ export async function getAdminSnapshot() {
         stats.withErrors += 1;
       }
 
+      if (action.graphFailedStep) {
+        stats.graphFailures += 1;
+      }
+
       if (triggerFromSnapshot(action.inputSnapshot) === "human-post-swarm") {
         stats.swarmWakeups += 1;
       }
 
       return stats;
     },
-    { openai: 0, template: 0, system: 0, unknown: 0, failed: 0, skipped: 0, rateLimited: 0, withErrors: 0, swarmWakeups: 0 }
+    {
+      openai: 0,
+      template: 0,
+      system: 0,
+      unknown: 0,
+      failed: 0,
+      skipped: 0,
+      rateLimited: 0,
+      withErrors: 0,
+      graphFailures: 0,
+      swarmWakeups: 0
+    }
   );
 
   const latestProviderError =
@@ -554,6 +571,40 @@ function rateLimitReasonFromSnapshot(snapshot: unknown) {
   const reason = (rateLimit as { reason?: unknown }).reason;
 
   return typeof reason === "string" && reason.length > 0 ? reason : null;
+}
+
+function graphFailedStepFromSnapshot(snapshot: unknown) {
+  const graph = graphFromSnapshot(snapshot);
+
+  if (!graph || !("failedStep" in graph)) {
+    return null;
+  }
+
+  const failedStep = (graph as { failedStep?: unknown }).failedStep;
+
+  return typeof failedStep === "string" && failedStep.length > 0 ? failedStep : null;
+}
+
+function graphPathFromSnapshot(snapshot: unknown) {
+  const graph = graphFromSnapshot(snapshot);
+
+  if (!graph || !("path" in graph)) {
+    return [];
+  }
+
+  const path = (graph as { path?: unknown }).path;
+
+  return Array.isArray(path) ? path.filter((step): step is string => typeof step === "string") : [];
+}
+
+function graphFromSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object" || !("graph" in snapshot)) {
+    return null;
+  }
+
+  const graph = (snapshot as { graph?: unknown }).graph;
+
+  return graph && typeof graph === "object" ? graph : null;
 }
 
 function triggerFromSnapshot(snapshot: unknown) {

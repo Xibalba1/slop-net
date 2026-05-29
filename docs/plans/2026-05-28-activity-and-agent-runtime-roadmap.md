@@ -1,7 +1,7 @@
 ---
 title: Activity Feed and Agent Runtime Roadmap Plan
 type: feat
-status: active
+status: completed
 date: 2026-05-28
 ---
 

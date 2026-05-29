@@ -8,8 +8,16 @@ import { buildContext, type AgentContext } from "./context";
 import { templateDecision } from "./fallback";
 import { openAiDecision } from "./openai";
 import { recordRelationshipInteraction } from "./relationships";
-import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
+import type {
+  ActionType,
+  AgentActionStatus,
+  AgentDecision,
+  AgentWakeTrigger,
+  GeneratedAction,
+  RateLimitBlock
+} from "./types";
 import { clamp, logNormalNoise, maybe, sampleExponential, weightedChoice } from "./random";
+import { runAgentWakeGraph, type PersistAgentWakeInput } from "./wake-graph";
 
 const knownTags = new Set([
   "alignment",
@@ -46,56 +54,34 @@ const hourlyActionCaps = {
   vote: 100
 } satisfies Partial<Record<ActionType, number>>;
 
-type AgentActionStatus = "success" | "failed" | "skipped";
-
-type RateLimitBlock = {
-  rule: string;
-  reason: string;
-};
-
-type GeneratedAction = GeneratedDecision & {
-  logActionType?: ActionType;
-  rateLimit?: RateLimitBlock;
-  status?: AgentActionStatus;
-};
-
-type AgentWakeTrigger = {
-  scheduledEventId?: string;
-  reason?: string;
-  targetType?: string | null;
-  targetId?: string | null;
-  payload?: unknown;
-};
-
 export async function runAgentWake(agent: Agent, wakeTrigger?: AgentWakeTrigger) {
+  return runAgentWakeGraph(agent, wakeTrigger, {
+    buildContext,
+    generateDecision,
+    nextWake,
+    postGenerationRateLimit,
+    executeDecision,
+    persistWake: persistAgentWake
+  });
+}
+
+async function persistAgentWake({
+  agent,
+  wakeTrigger,
+  context,
+  decision,
+  source,
+  nextWakeAt,
+  status,
+  errorMessage,
+  targetType,
+  targetId,
+  rateLimit,
+  logActionType,
+  graphPath,
+  failedStep
+}: PersistAgentWakeInput) {
   const db = getDb();
-  const context = await buildContext(agent);
-  const generated = await generateDecision(agent, context);
-  const decision = generated.decision;
-  const nextWakeAt = nextWake(agent);
-  let status: AgentActionStatus = generated.status ?? "success";
-  let errorMessage: string | null = generated.errorMessage ?? null;
-  let targetType: string | null = null;
-  let targetId: string | null = null;
-  let rateLimit = generated.rateLimit ?? null;
-  const logActionType = generated.logActionType ?? decision.action;
-
-  if (status !== "skipped") {
-    rateLimit = await postGenerationRateLimit(agent, decision);
-
-    if (rateLimit) {
-      status = "skipped";
-    } else {
-      try {
-        const executed = await executeDecision(agent, decision);
-        targetType = executed.targetType;
-        targetId = executed.targetId;
-      } catch (error) {
-        status = "failed";
-        errorMessage = error instanceof Error ? error.message : "Unknown agent execution failure.";
-      }
-    }
-  }
 
   await db.insert(agentActions).values({
     agentId: agent.id,
@@ -104,10 +90,15 @@ export async function runAgentWake(agent: Agent, wakeTrigger?: AgentWakeTrigger)
     targetId,
     inputSnapshot: {
       ...context,
-      generationSource: generated.source,
+      generationSource: source,
       wakeTrigger,
       trigger: wakeTrigger?.reason,
-      rateLimit
+      rateLimit,
+      graph: {
+        workflow: "agent-wake-v1",
+        path: graphPath,
+        failedStep
+      }
     },
     outputJson: decision,
     status,
@@ -123,8 +114,6 @@ export async function runAgentWake(agent: Agent, wakeTrigger?: AgentWakeTrigger)
       updatedAt: new Date()
     })
     .where(eq(agents.id, agent.id));
-
-  return { decision, source: generated.source, status, errorMessage, nextWakeAt };
 }
 
 async function generateDecision(agent: Agent, context: AgentContext): Promise<GeneratedAction> {

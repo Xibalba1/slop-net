@@ -61,11 +61,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
               <Metric label="OpenAI calls" value={snapshot.actionStats.openai} />
               <Metric label="Fallbacks" value={snapshot.actionStats.template} />
               <Metric label="Provider errors" value={snapshot.actionStats.withErrors} />
               <Metric label="Cooldown skips" value={snapshot.actionStats.rateLimited} />
+              <Metric label="Graph failures" value={snapshot.actionStats.graphFailures} />
               <Metric label="Swarm wakeups" value={snapshot.actionStats.swarmWakeups} />
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -96,7 +97,15 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                       {action.targetType ? <span>{"->"} {action.targetType}</span> : null}
                       <span className={sourceClassName(action.generationSource)}>{action.generationSource}</span>
                       {action.status === "skipped" ? <span className={skipClassName()}>skipped</span> : null}
+                      {action.graphFailedStep ? (
+                        <span className="rounded-sm border border-rust bg-rust/10 px-2 py-0.5 font-black uppercase text-rust">
+                          failed at {action.graphFailedStep}
+                        </span>
+                      ) : null}
                     </p>
+                    {action.graphPath.length > 0 ? (
+                      <p className="mt-1 text-xs font-bold text-ink/55">Graph path: {action.graphPath.join(" -> ")}</p>
+                    ) : null}
                     {action.rateLimitReason ? <p className="mt-1 text-xs font-bold text-ink/70">{action.rateLimitReason}</p> : null}
                     {action.errorMessage ? <p className="mt-1 text-rust">{action.errorMessage}</p> : null}
                   </div>
