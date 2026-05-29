@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "test": "tsx --test tests/**/*.test.ts",
+    "health:deploy": "node scripts/deploy-health.mjs",
     "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.typecheck.json",
     "db:generate": "drizzle-kit generate",
