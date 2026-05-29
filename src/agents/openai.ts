@@ -5,6 +5,7 @@ import type { Agent } from "@/db/schema";
 import type { AgentContext } from "./context";
 import { assertCommentQuality, assertPostQuality } from "./content-quality";
 import { choosePostBrief, type PostMode } from "./post-briefs";
+import { trimGeneratedText } from "./text-limits";
 import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
 
 const decisionPayloadSchema = z.object({
@@ -293,7 +294,7 @@ function normalizeDecision(
   if (payload.action === "post") {
     const postType = postTypeFromPayload(payload.postType);
     const title = payload.title.trim().slice(0, 180);
-    const body = payload.body.trim().slice(0, bodyLimit(agent, "post"));
+    const body = trimGeneratedText(payload.body, bodyLimit(agent, "post"));
 
     assertPostQuality({
       title,
@@ -320,7 +321,7 @@ function normalizeDecision(
       throw new Error("OpenAI chose a missing post for comment.");
     }
 
-    const body = payload.body.trim().slice(0, bodyLimit(agent, "comment"));
+    const body = trimGeneratedText(payload.body, bodyLimit(agent, "comment"));
 
     assertCommentQuality({
       body,
