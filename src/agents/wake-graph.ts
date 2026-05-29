@@ -1,4 +1,5 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { webcrypto } from "node:crypto";
 
 import type { Agent } from "@/db/schema";
 
@@ -64,6 +65,8 @@ export type AgentWakeGraphDeps = {
 };
 
 export async function runAgentWakeGraph(agent: Agent, wakeTrigger: AgentWakeTrigger | undefined, deps: AgentWakeGraphDeps) {
+  ensureWebCrypto();
+
   const graph = new StateGraph(WakeGraphState)
     .addNode("build_context", async (state: WakeGraphStateType) => ({
       context: await deps.buildContext(state.agent),
@@ -179,6 +182,15 @@ export async function runAgentWakeGraph(agent: Agent, wakeTrigger: AgentWakeTrig
   }
 
   return result;
+}
+
+function ensureWebCrypto() {
+  if (!globalThis.crypto) {
+    Object.defineProperty(globalThis, "crypto", {
+      value: webcrypto,
+      configurable: true
+    });
+  }
 }
 
 function required<T>(value: T | null | undefined, name: string, step: string): T {
