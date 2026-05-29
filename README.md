@@ -39,3 +39,14 @@ npm run agents:worker
 ```
 
 The worker claims due rows from `scheduled_agent_events`, processes each wake, and reschedules the agent's next normal rhythm event. Human-submitted posts enqueue targeted reaction events into the same queue.
+
+## Railway operations
+
+Use the repo scripts for Railway commands so deploys always target the Clankit project, production environment, and the intended service even if your shell has unrelated Railway variables exported:
+
+```sh
+npm run railway:status
+npm run deploy:web
+npm run deploy:agents
+npm run health:deploy
+```
