@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 
 const baseUrl = normalizeBaseUrl(process.env.DEPLOY_HEALTH_BASE_URL ?? "https://web-production-87f78.up.railway.app");
 const timeoutMs = Number.parseInt(process.env.DEPLOY_HEALTH_TIMEOUT_MS ?? "10000", 10);
+const expectedDeploymentId = normalizeOptionalValue(process.env.DEPLOY_HEALTH_EXPECTED_DEPLOYMENT_ID);
 const expectedSha = normalizeOptionalValue(process.env.DEPLOY_HEALTH_EXPECTED_SHA);
 
 const checks = [
@@ -26,7 +27,7 @@ if (isMainModule()) {
 }
 
 async function runMain() {
-  const failures = await runDeployHealth({ baseUrl, checks, expectedSha, timeoutMs });
+  const failures = await runDeployHealth({ baseUrl, checks, expectedDeploymentId, expectedSha, timeoutMs });
 
   if (failures > 0) {
     console.error(`Deploy health failed with ${failures} issue${failures === 1 ? "" : "s"}.`);
@@ -36,12 +37,12 @@ async function runMain() {
   console.log("Deploy health passed.");
 }
 
-export async function runDeployHealth({ baseUrl, checks, expectedSha, timeoutMs }) {
+export async function runDeployHealth({ baseUrl, checks, expectedDeploymentId, expectedSha, timeoutMs }) {
   let failures = 0;
 
   console.log(`Deploy health for ${baseUrl}`);
 
-  failures += await checkReleaseMetadata({ baseUrl, expectedSha, timeoutMs });
+  failures += await checkReleaseMetadata({ baseUrl, expectedDeploymentId, expectedSha, timeoutMs });
 
   for (const check of checks) {
     const url = new URL(check.path, baseUrl);
@@ -90,7 +91,14 @@ export async function runDeployHealth({ baseUrl, checks, expectedSha, timeoutMs 
   return failures;
 }
 
-export async function checkReleaseMetadata({ baseUrl, expectedSha, timeoutMs, fetchImpl = fetch, logger = console }) {
+export async function checkReleaseMetadata({
+  baseUrl,
+  expectedDeploymentId,
+  expectedSha,
+  timeoutMs,
+  fetchImpl = fetch,
+  logger = console
+}) {
   const url = new URL("/api/health", baseUrl);
 
   try {
@@ -109,6 +117,7 @@ export async function checkReleaseMetadata({ baseUrl, expectedSha, timeoutMs, fe
     const metadata = await response.json();
     const commitSha = normalizeOptionalValue(metadata?.commit?.sha);
     const shortSha = normalizeOptionalValue(metadata?.commit?.shortSha) ?? (commitSha ? commitSha.slice(0, 7) : null);
+    const deploymentId = normalizeOptionalValue(metadata?.railway?.deploymentId);
     const source = normalizeOptionalValue(metadata?.commit?.source) ?? "unknown source";
 
     if (!metadata?.ok) {
@@ -121,12 +130,26 @@ export async function checkReleaseMetadata({ baseUrl, expectedSha, timeoutMs, fe
       return 1;
     }
 
+    if (expectedDeploymentId && !deploymentId) {
+      logger.error(`FAIL release metadata: expected deployment ${expectedDeploymentId}, but deployment id is unknown`);
+      return 1;
+    }
+
+    if (expectedDeploymentId && deploymentId !== expectedDeploymentId) {
+      logger.error(`FAIL release metadata: expected deployment ${expectedDeploymentId}, got ${deploymentId}`);
+      return 1;
+    }
+
     if (expectedSha && commitSha && !shaMatches(expectedSha, commitSha)) {
       logger.error(`FAIL release metadata: expected ${expectedSha.slice(0, 7)}, got ${commitSha.slice(0, 7)}`);
       return 1;
     }
 
-    const suffix = expectedSha ? " and matched expected commit" : "";
+    const suffixes = [
+      expectedSha ? "matched expected commit" : null,
+      expectedDeploymentId ? "matched expected deployment" : null
+    ].filter(Boolean);
+    const suffix = suffixes.length > 0 ? ` and ${suffixes.join(", ")}` : "";
     logger.log(`PASS release metadata: ${shortSha ?? "unknown commit"} from ${source}${suffix}`);
     return 0;
   } catch (error) {

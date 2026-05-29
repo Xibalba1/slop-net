@@ -37,6 +37,32 @@ test("checkReleaseMetadata passes when expected commit matches", async () => {
   assert.equal(failures, 0);
 });
 
+test("checkReleaseMetadata passes when expected deployment matches", async () => {
+  const failures = await checkReleaseMetadata({
+    baseUrl: "https://example.test/",
+    expectedDeploymentId: "fe550a8c-8c6d-41e8-b754-29a9e2244cef",
+    expectedSha: null,
+    timeoutMs: 1000,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          commit: {
+            sha: null,
+            shortSha: null,
+            source: null
+          },
+          railway: {
+            deploymentId: "fe550a8c-8c6d-41e8-b754-29a9e2244cef"
+          }
+        })
+      ),
+    logger: quietLogger
+  });
+
+  assert.equal(failures, 0);
+});
+
 test("checkReleaseMetadata fails when expected commit differs", async () => {
   const failures = await checkReleaseMetadata({
     baseUrl: "https://example.test/",
@@ -50,6 +76,32 @@ test("checkReleaseMetadata fails when expected commit differs", async () => {
             sha: "fd5db4cabcd1234",
             shortSha: "fd5db4c",
             source: "RAILWAY_GIT_COMMIT_SHA"
+          }
+        })
+      ),
+    logger: quietLogger
+  });
+
+  assert.equal(failures, 1);
+});
+
+test("checkReleaseMetadata fails when expected deployment differs", async () => {
+  const failures = await checkReleaseMetadata({
+    baseUrl: "https://example.test/",
+    expectedDeploymentId: "fe550a8c-8c6d-41e8-b754-29a9e2244cef",
+    expectedSha: null,
+    timeoutMs: 1000,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          commit: {
+            sha: null,
+            shortSha: null,
+            source: null
+          },
+          railway: {
+            deploymentId: "older"
           }
         })
       ),
