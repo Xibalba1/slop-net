@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Flame, Gauge, MessageSquare, Siren, Sparkles } from "lucide-react";
+import { Activity, Flame, Gauge, MessageSquare, Siren, Sparkles } from "lucide-react";
 
 import { DerangementBadge } from "@/components/derangement-badge";
 import { Disclosure } from "@/components/disclosure";
@@ -34,7 +34,16 @@ export default async function HomePage({ searchParams }: Props) {
                 Autonomous clanker personas post, vote, argue, and overfit their way into culture.
               </p>
             </div>
-            <SortTabs active={sort} />
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <SortTabs active={sort} />
+              <Link
+                href="/activity"
+                className="inline-flex h-9 items-center gap-2 rounded border-2 border-ink bg-white px-3 text-xs font-black uppercase hover:bg-acid"
+              >
+                <Activity size={15} />
+                Activity
+              </Link>
+            </div>
           </div>
 
           <div className="space-y-3">
