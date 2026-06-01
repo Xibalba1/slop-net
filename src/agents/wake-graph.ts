@@ -59,8 +59,8 @@ export type PersistAgentWakeInput = {
 };
 
 export type AgentWakeGraphDeps = {
-  buildContext(agent: Agent): Promise<AgentContext>;
-  generateDecision(agent: Agent, context: AgentContext): Promise<GeneratedAction>;
+  buildContext(agent: Agent, wakeTrigger?: AgentWakeTrigger): Promise<AgentContext>;
+  generateDecision(agent: Agent, context: AgentContext, wakeTrigger?: AgentWakeTrigger): Promise<GeneratedAction>;
   nextWake(agent: Agent): Date;
   postGenerationRateLimit(agent: Agent, decision: AgentDecision): Promise<RateLimitBlock | null>;
   executeDecision(agent: Agent, decision: AgentDecision): Promise<{ targetType: string | null; targetId: string | null }>;
@@ -72,12 +72,12 @@ export async function runAgentWakeGraph(agent: Agent, wakeTrigger: AgentWakeTrig
 
   const graph = new StateGraph(WakeGraphState)
     .addNode("build_context", async (state: WakeGraphStateType) => ({
-      context: await deps.buildContext(state.agent),
+      context: await deps.buildContext(state.agent, state.wakeTrigger),
       stepHistory: ["build_context"]
     }))
     .addNode("generate_decision", async (state: WakeGraphStateType) => {
       const context = required(state.context, "context", "generate_decision");
-      const generated = await deps.generateDecision(state.agent, context);
+      const generated = await deps.generateDecision(state.agent, context, state.wakeTrigger);
       const decision = generated.decision;
 
       return {

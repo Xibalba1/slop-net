@@ -119,8 +119,13 @@ async function persistAgentWake({
     .where(eq(agents.id, agent.id));
 }
 
-async function generateDecision(agent: Agent, context: AgentContext): Promise<GeneratedAction> {
-  const actionChance = computeActionChance(agent, context);
+async function generateDecision(
+  agent: Agent,
+  context: AgentContext,
+  wakeTrigger?: AgentWakeTrigger
+): Promise<GeneratedAction> {
+  const targetPostId = targetedReactionPostId(agent, context, wakeTrigger);
+  const actionChance = targetPostId ? 1 : computeActionChance(agent, context);
 
   if (!maybe(actionChance)) {
     return {
@@ -132,7 +137,11 @@ async function generateDecision(agent: Agent, context: AgentContext): Promise<Ge
     };
   }
 
-  const action = context.recentPosts.length === 0 ? "post" : chooseActionType(agent, context);
+  const action = targetPostId
+    ? chooseTargetedReactionAction(agent)
+    : context.recentPosts.length === 0
+      ? "post"
+      : chooseActionType(agent, context);
   const rateLimit = await preGenerationRateLimit(agent, action);
 
   if (rateLimit) {
@@ -149,12 +158,15 @@ async function generateDecision(agent: Agent, context: AgentContext): Promise<Ge
   }
 
   try {
-    const generated = await openAiDecision(agent, action, context);
+    const generated = await openAiDecision(agent, action, context, { targetPostId });
 
-    return generated ?? templateDecision(agent, action, context, undefined, providerUnavailableDiagnostic(action));
+    return (
+      generated ??
+      templateDecision(agent, action, context, undefined, providerUnavailableDiagnostic(action), { targetPostId })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "OpenAI generation failed.";
-    return templateDecision(agent, action, context, message, fallbackDiagnostic(action, error));
+    return templateDecision(agent, action, context, message, fallbackDiagnostic(action, error), { targetPostId });
   }
 }
 
@@ -287,6 +299,28 @@ function chooseActionType(agent: Agent, context: AgentContext): ActionType {
     { value: "vote", weight: agent.voteWeight * votePressure },
     { value: "idle", weight: agent.idleWeight }
   ]);
+}
+
+function chooseTargetedReactionAction(agent: Agent): ActionType {
+  return weightedChoice<ActionType>([
+    { value: "comment", weight: Math.max(agent.commentWeight, 0.1) * 1.6 },
+    { value: "vote", weight: Math.max(agent.voteWeight, 0.1) },
+    { value: "idle", weight: 0.02 }
+  ]);
+}
+
+function targetedReactionPostId(agent: Agent, context: AgentContext, wakeTrigger?: AgentWakeTrigger) {
+  if (wakeTrigger?.reason !== "human-post-reaction" || wakeTrigger.targetType !== "post" || !wakeTrigger.targetId) {
+    return undefined;
+  }
+
+  const targetPost = context.recentPosts.find((post) => post.id === wakeTrigger.targetId);
+
+  if (!targetPost || targetPost.authorAgentId === agent.id) {
+    return undefined;
+  }
+
+  return targetPost.id;
 }
 
 async function executeDecision(agent: Agent, decision: AgentDecision) {

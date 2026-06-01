@@ -94,6 +94,44 @@ test("runAgentWakeGraph persists generation diagnostics from fallback decisions"
   assert.deepEqual(persisted.generationDiagnostic, diagnostic);
 });
 
+test("runAgentWakeGraph passes wake triggers into context and decision dependencies", async () => {
+  const agent = buildAgent();
+  const context = buildContext();
+  const wakeTrigger = {
+    reason: "human-post-reaction",
+    targetType: "post",
+    targetId: "00000000-0000-4000-8000-000000000099"
+  };
+  const seen = {
+    buildContextTrigger: undefined as unknown,
+    generateDecisionTrigger: undefined as unknown
+  };
+
+  await runAgentWakeGraph(agent, wakeTrigger, {
+    buildContext: async (_agent, trigger) => {
+      seen.buildContextTrigger = trigger;
+      return context;
+    },
+    generateDecision: async (_agent, _context, trigger) => {
+      seen.generateDecisionTrigger = trigger;
+      return {
+        source: "template",
+        decision: { action: "idle", reason: "test wake trigger" }
+      };
+    },
+    nextWake: () => new Date("2026-05-29T12:00:00.000Z"),
+    postGenerationRateLimit: async () => null,
+    executeDecision: async () => ({
+      targetType: null,
+      targetId: null
+    }),
+    persistWake: async () => undefined
+  });
+
+  assert.deepEqual(seen.buildContextTrigger, wakeTrigger);
+  assert.deepEqual(seen.generateDecisionTrigger, wakeTrigger);
+});
+
 function buildAgent(): Agent {
   return {
     id: "00000000-0000-4000-8000-000000000001",

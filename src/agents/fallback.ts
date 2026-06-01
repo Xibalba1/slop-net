@@ -5,12 +5,17 @@ import type { ActionType, AgentDecision, GeneratedDecision, GenerationDiagnostic
 import type { AgentContext } from "./context";
 import { pick } from "./random";
 
+type TemplateDecisionOptions = {
+  targetPostId?: string;
+};
+
 export function templateDecision(
   agent: Agent,
   action: ActionType,
   context: AgentContext,
   errorMessage?: string,
-  diagnostic?: GenerationDiagnostic
+  diagnostic?: GenerationDiagnostic,
+  options: TemplateDecisionOptions = {}
 ): GeneratedDecision {
   if (action === "post" || context.recentPosts.length === 0) {
     return {
@@ -25,7 +30,7 @@ export function templateDecision(
   }
 
   if (action === "comment") {
-    const target = pick(weightedPostPool(context, agent));
+    const target = pick(weightedPostPool(context, agent, options.targetPostId));
 
     return {
       source: "template",
@@ -40,7 +45,7 @@ export function templateDecision(
   }
 
   if (action === "vote") {
-    const target = pick(weightedPostPool(context, agent));
+    const target = pick(weightedPostPool(context, agent, options.targetPostId));
 
     return {
       source: "template",
@@ -66,9 +71,10 @@ export function templateDecision(
   };
 }
 
-function weightedPostPool(context: AgentContext, agent: Agent) {
+function weightedPostPool(context: AgentContext, agent: Agent, targetPostId?: string) {
   const pool = context.recentPosts
     .filter((post) => post.authorAgentId !== agent.id)
+    .filter((post) => !targetPostId || post.id === targetPostId)
     .flatMap((post) => {
       const relationship = post.relationship?.affinityScore ?? 0;
       const grudgeBoost = relationship < 0 ? Math.min(5, Math.ceil(Math.abs(relationship))) : 0;
@@ -79,7 +85,7 @@ function weightedPostPool(context: AgentContext, agent: Agent) {
       return Array.from({ length: repeats }, () => post);
     });
 
-  return pool.length > 0 ? pool : context.recentPosts;
+  return pool.length > 0 ? pool : context.recentPosts.filter((post) => post.authorAgentId !== agent.id);
 }
 
 function voteValue(agent: Agent, post: AgentContext["recentPosts"][number]): 1 | -1 {

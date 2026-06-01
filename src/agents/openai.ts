@@ -8,6 +8,10 @@ import { choosePostBrief, type PostMode } from "./post-briefs";
 import { trimGeneratedText } from "./text-limits";
 import type { ActionType, AgentDecision, GeneratedDecision } from "./types";
 
+type OpenAiDecisionOptions = {
+  targetPostId?: string;
+};
+
 const decisionPayloadSchema = z.object({
   action: z.enum(["post", "comment", "vote", "idle"]),
   postType: z.union([
@@ -100,7 +104,8 @@ const knownTags = new Set([
 export async function openAiDecision(
   agent: Agent,
   action: ActionType,
-  context: AgentContext
+  context: AgentContext,
+  options: OpenAiDecisionOptions = {}
 ): Promise<GeneratedDecision | null> {
   const apiKey = process.env.SLOPNET_OPENAI_API_KEY;
 
@@ -128,7 +133,7 @@ export async function openAiDecision(
           },
           {
             role: "user",
-            content: JSON.stringify(buildPromptPayload(agent, action, context))
+            content: JSON.stringify(buildPromptPayload(agent, action, context, options))
           }
         ],
         max_output_tokens: 1600,
@@ -154,7 +159,7 @@ export async function openAiDecision(
     const payload = (await response.json()) as unknown;
     const text = extractOutputText(payload);
     const parsed = decisionPayloadSchema.parse(JSON.parse(text));
-    const decision = normalizeDecision(agent, parsed, action, context);
+    const decision = normalizeDecision(agent, parsed, action, context, options);
 
     return { decision, source: "openai" };
   } finally {
@@ -180,20 +185,31 @@ function systemPrompt(agent: Agent) {
   ].join("\n");
 }
 
-function buildPromptPayload(agent: Agent, action: ActionType, context: AgentContext) {
+function buildPromptPayload(agent: Agent, action: ActionType, context: AgentContext, options: OpenAiDecisionOptions) {
   const postBrief = action === "post" ? choosePostBrief(agent) : null;
+  const targetedPosts = options.targetPostId
+    ? context.recentPosts.filter((post) => post.id === options.targetPostId)
+    : context.recentPosts;
+  const targetedComments = options.targetPostId
+    ? context.recentComments.filter((comment) => comment.postId === options.targetPostId)
+    : context.recentComments;
   const actionInstruction =
     action === "post"
       ? "Create an informed AI-discourse forum post that follows postBrief."
-      : action === "comment"
-        ? "Comment on exactly one eligible recent post."
-        : action === "vote"
-          ? "Vote on exactly one eligible recent post or comment."
+      : options.targetPostId && action === "comment"
+        ? "Comment on the targeted human post. Do not choose another post."
+        : options.targetPostId && action === "vote"
+          ? "Vote on the targeted human post or a comment in that same thread. Do not choose another thread."
+          : action === "comment"
+            ? "Comment on exactly one eligible recent post."
+            : action === "vote"
+              ? "Vote on exactly one eligible recent post or comment."
           : "Idle with an in-character reason.";
 
   return {
     now: new Date().toISOString(),
     requiredAction: action,
+    targetPostId: options.targetPostId ?? "",
     actionInstruction,
     limits: {
       titleMaxChars: 180,
@@ -229,7 +245,7 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
       agreements: relationship.agreementCount,
       disagreements: relationship.disagreementCount
     })),
-    eligiblePosts: context.recentPosts
+    eligiblePosts: targetedPosts
       .filter((post) => post.authorAgentId !== agent.id)
       .slice(0, 12)
       .map((post) => ({
@@ -247,7 +263,7 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
         commentCount: post.commentCount,
         tags: post.tags
       })),
-    eligibleComments: context.recentComments
+    eligibleComments: targetedComments
       .filter((comment) => comment.authorAgentId !== agent.id)
       .slice(0, 12)
       .map((comment) => ({
@@ -262,6 +278,9 @@ function buildPromptPayload(agent: Agent, action: ActionType, context: AgentCont
     recentCommentSnippets: context.recentComments.slice(0, 8).map((comment) => comment.body.slice(0, 180)),
     outputRules: [
       `The action field must be "${action}".`,
+      options.targetPostId
+        ? `This is a targeted human-post reaction. You must use postId "${options.targetPostId}" for comments, or targetId "${options.targetPostId}" for post votes.`
+        : "Use any fitting eligible target.",
       "Use only IDs from eligiblePosts or eligibleComments.",
       "For a comment action, set postId to the chosen post ID, body to the comment, target fields empty, value 0.",
       "For a vote action, set targetType to post or comment, targetId to the chosen target ID, value to 1 for Overclock or -1 for Undervolt.",
@@ -285,7 +304,8 @@ function normalizeDecision(
   agent: Agent,
   payload: DecisionPayload,
   expectedAction: ActionType,
-  context: AgentContext
+  context: AgentContext,
+  options: OpenAiDecisionOptions
 ): AgentDecision {
   if (payload.action !== expectedAction) {
     throw new Error(`OpenAI returned ${payload.action}, expected ${expectedAction}.`);
@@ -321,6 +341,10 @@ function normalizeDecision(
       throw new Error("OpenAI chose a missing post for comment.");
     }
 
+    if (options.targetPostId && payload.postId !== options.targetPostId) {
+      throw new Error("OpenAI chose the wrong post for a targeted reaction comment.");
+    }
+
     const body = trimGeneratedText(payload.body, bodyLimit(agent, "comment"));
 
     assertCommentQuality({
@@ -344,6 +368,7 @@ function normalizeDecision(
 
     const validPostIds = new Set(context.recentPosts.map((post) => post.id));
     const validCommentIds = new Set(context.recentComments.map((comment) => comment.id));
+    const targetComment = context.recentComments.find((comment) => comment.id === payload.targetId);
     const validTarget =
       payload.targetType === "post" ? validPostIds.has(payload.targetId) : validCommentIds.has(payload.targetId);
 
@@ -353,6 +378,16 @@ function normalizeDecision(
 
     if (payload.value !== 1 && payload.value !== -1) {
       throw new Error("OpenAI returned invalid vote value.");
+    }
+
+    if (
+      options.targetPostId &&
+      !(
+        (payload.targetType === "post" && payload.targetId === options.targetPostId) ||
+        (payload.targetType === "comment" && targetComment?.postId === options.targetPostId)
+      )
+    ) {
+      throw new Error("OpenAI chose the wrong target for a targeted reaction vote.");
     }
 
     return {
