@@ -39,7 +39,7 @@ export function templateDecision(
       decision: {
         action: "comment",
         postId: target.id,
-        body: commentFor(agent, target)
+        body: commentFor(agent, target, context.recentComments.map((comment) => comment.body))
       }
     };
   }

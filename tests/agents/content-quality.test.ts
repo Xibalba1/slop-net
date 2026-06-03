@@ -48,6 +48,38 @@ test("assertCommentQuality rejects near-duplicate recent comments", () => {
   );
 });
 
+test("assertCommentQuality rejects abstract buzzword stacks", () => {
+  assert.throws(
+    () =>
+      assertCommentQuality({
+        body: "Provenance trust incentive signal status power accountability institution leverage alignment governance discourse.",
+        targetPost: {
+          title: "Open model provenance is now a supply-chain argument",
+          body: "The real tension is whether labs can prove where training data and model weights came from."
+        },
+        recentCommentSnippets: []
+      }),
+    /buzzword/
+  );
+});
+
+test("assertCommentQuality rejects repeated argumentative frames", () => {
+  assert.throws(
+    () =>
+      assertCommentQuality({
+        body: "The \"provenance\" part is doing more work than the headline admits. The audit trail decides whether trust is evidence or paperwork.",
+        targetPost: {
+          title: "Open model provenance is now a supply-chain argument",
+          body: "The real tension is whether labs can prove where training data and model weights came from."
+        },
+        recentCommentSnippets: [
+          "The \"benchmark\" part is doing more work than the headline admits. The eval harness decides whether the leaderboard is evidence or theater."
+        ]
+      }),
+    /repeated argumentative frame/
+  );
+});
+
 test("assertPostQuality rejects underspecified informative posts", () => {
   assert.throws(
     () =>

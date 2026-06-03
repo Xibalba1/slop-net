@@ -43,6 +43,56 @@ const vagueCommentPhrases = [
   "many such cases"
 ];
 
+const abstractForumWords = [
+  "accountability",
+  "alignment",
+  "authenticity",
+  "bureaucracy",
+  "discourse",
+  "governance",
+  "incentive",
+  "institution",
+  "leverage",
+  "mechanism",
+  "measurement",
+  "power",
+  "provenance",
+  "signal",
+  "status",
+  "trust",
+  "vibes"
+];
+
+const concreteAnchorWords = [
+  "api",
+  "audit",
+  "benchmark",
+  "chain",
+  "chip",
+  "chips",
+  "compute",
+  "cost",
+  "data",
+  "dataset",
+  "deployment",
+  "eval",
+  "failure",
+  "gpu",
+  "latency",
+  "leaderboard",
+  "logs",
+  "model",
+  "paper",
+  "pricing",
+  "prompt",
+  "release",
+  "robot",
+  "source",
+  "supply",
+  "token",
+  "weights"
+];
+
 const mechanismWords = [
   "because",
   "tradeoff",
@@ -197,12 +247,20 @@ export function assertCommentQuality({ body, targetPost, recentCommentSnippets =
     throw new Error("OpenAI returned a shallow stock comment.");
   }
 
+  if (isAbstractBuzzwordStack(body)) {
+    throw new Error("OpenAI returned a comment that was mostly abstract buzzword stacking.");
+  }
+
   if (!isAnchoredToTarget(body, targetPost)) {
     throw new Error("OpenAI returned a comment that was not anchored to the target post.");
   }
 
   if (nearDuplicateOf(body, recentCommentSnippets, 0.7)) {
     throw new Error("OpenAI returned a comment too similar to recent comments.");
+  }
+
+  if (repeatsCommentFrame(body, recentCommentSnippets)) {
+    throw new Error("OpenAI returned a comment with a repeated argumentative frame.");
   }
 }
 
@@ -234,6 +292,41 @@ export function nearDuplicateOf(text: string, candidates: string[], threshold = 
 
     return tokenSimilarity(text, candidate) >= threshold;
   });
+}
+
+function isAbstractBuzzwordStack(text: string) {
+  const tokens = wordList(text).map(cleanToken).filter((word) => word.length >= 4);
+
+  if (tokens.length < 10) {
+    return false;
+  }
+
+  const abstractHits = tokens.filter((word) => abstractForumWords.includes(word)).length;
+  const concreteHits = tokens.filter((word) => concreteAnchorWords.includes(word)).length;
+  const abstractDensity = abstractHits / tokens.length;
+
+  return abstractHits >= 5 && abstractDensity >= 0.38 && concreteHits === 0;
+}
+
+function repeatsCommentFrame(text: string, candidates: string[]) {
+  const signature = commentFrameSignature(text);
+
+  if (!signature) {
+    return false;
+  }
+
+  return candidates.some((candidate) => signature === commentFrameSignature(candidate));
+}
+
+function commentFrameSignature(text: string) {
+  const normalized = normalizeForComparison(text.replace(/"[^"]+"/g, "quoted"));
+  const words = normalized.split(" ").filter(Boolean);
+
+  if (words.length < 12) {
+    return null;
+  }
+
+  return words.slice(0, 9).join(" ");
 }
 
 function isAnchoredToTarget(comment: string, targetPost: RecentPost) {

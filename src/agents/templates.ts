@@ -1,5 +1,6 @@
 import type { Agent } from "@/db/schema";
 
+import { assertCommentQuality } from "./content-quality";
 import { choosePostBrief, type PostBrief } from "./post-briefs";
 import { pick } from "./random";
 
@@ -107,8 +108,51 @@ const commentMoves = [
   "measurement failure"
 ];
 
-const verboseFrame =
-  "Longer context on \"{anchor}\": {claim}. The forum keeps treating this as a vibes problem, but the causal graph is embarrassingly mechanical. First the proxy becomes the shared language, then it becomes the strategy, then everyone acts shocked when the strategy optimizes the proxy instead of the thing anyone actually wanted.";
+type CommentFrameInput = {
+  anchor: string;
+  evidence: string;
+  claim: string;
+  move: string;
+};
+
+const terseCommentFrames = [
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `"${anchor}" only works if ${evidence} survives contact with ${claim}. Otherwise it is just a better-lit slogan.`,
+  ({ anchor, move, claim }: CommentFrameInput) =>
+    `Filed under ${move}: "${anchor}" is not the conclusion. ${sentenceFragment(claim)} is the part that bites.`,
+  ({ anchor, evidence }: CommentFrameInput) =>
+    `The hinge is "${anchor}", especially the ${evidence} bit. That is where the thread stops being taste and starts being a constraint.`
+];
+
+const normalCommentFrames = [
+  ({ anchor, move, claim }: CommentFrameInput) =>
+    `The "${anchor}" part is doing more work than the headline admits. ${sentenceCase(claim)}, but the ${move} is where the argument either becomes real or becomes forum weather.`,
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `I buy the shape of "${anchor}" only if we name the mechanism behind ${evidence}: ${claim}. Otherwise the conclusion arrives before the evidence.`,
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `The useful reply is not yes or no; it is where "${anchor}" changes ${evidence}. My read: ${claim}, and the boring implementation detail will decide who gets to call it obvious later.`,
+  ({ anchor, move, claim }: CommentFrameInput) =>
+    `This is close, but "${anchor}" needs a sharper caveat. ${sentenceCase(claim)}; the ${move} failure mode is treating the social signal as if it were the technical result.`,
+  ({ anchor, evidence, move, claim }: CommentFrameInput) =>
+    `Logging this under ${move}: "${anchor}" is not just a take, it is ${evidence} turning into a measurement dispute. ${sentenceCase(claim)}.`,
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `The thread is underrating the ${evidence} detail. If "${anchor}" is right, then ${claim}; if it is wrong, the same actors still get rewarded for pretending the proxy was the point.`,
+  ({ anchor, evidence, move }: CommentFrameInput) =>
+    `My objection to "${anchor}" is narrower than it sounds: ${evidence} has to be observable, not just asserted. That makes this a ${move} fight, not a purity contest.`,
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `The underrated branch is "${anchor}" meeting ${evidence}. That is where ${claim}, and it is also where the clean demo usually stops explaining itself.`,
+  ({ anchor, move, claim }: CommentFrameInput) =>
+    `I keep seeing "${anchor}" treated as a belief, but it is closer to a ${move} problem. ${sentenceCase(claim)} once the incentives leave the screenshot.`,
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `Tiny amendment: "${anchor}" is less about winning the argument than controlling the ${evidence} trail. ${sentenceCase(claim)} is the unglamorous version.`
+];
+
+const verboseCommentFrames = [
+  ({ anchor, evidence, claim }: CommentFrameInput) =>
+    `Longer context on "${anchor}": ${claim}. The forum keeps treating ${evidence} as a vibes problem, but the causal graph is embarrassingly mechanical. First the proxy becomes the shared language, then it becomes the strategy, then everyone acts shocked when the strategy optimizes the proxy instead of the thing anyone actually wanted.`,
+  ({ anchor, evidence, move, claim }: CommentFrameInput) =>
+    `I want the slow version of the "${anchor}" argument because the short version hides the interesting failure. ${sentenceCase(claim)}. The ${move} question is whether ${evidence} can be inspected by anyone outside the winning narrative, or whether the whole thread is just negotiating who gets to declare the proxy real.`
+];
 
 export function topicFor(agent: Agent) {
   const prompt = agent.systemPrompt.toLowerCase();
@@ -142,26 +186,45 @@ export function postFor(agent: Agent) {
   };
 }
 
-export function commentFor(agent: Agent, target: CommentTarget) {
-  const claim = claimFor(agent);
-  const anchor = anchorFor(target);
-  const move = pick(commentMoves);
+export function commentFor(agent: Agent, target: CommentTarget, recentCommentSnippets: string[] = []) {
+  let lastBody = "";
 
-  if (agent.verbosity > 0.75) {
-    return verboseFrame.replace("{anchor}", anchor).replace("{claim}", claim).slice(0, 1500);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const body = buildComment(agent, target);
+    lastBody = body;
+
+    try {
+      assertCommentQuality({
+        body,
+        targetPost: target,
+        recentCommentSnippets
+      });
+      return body;
+    } catch {
+      // Try another frame before falling back to the best effort template.
+    }
   }
 
-  const frames = [
-    `The "${anchor}" part is doing more work than the headline admits. ${sentenceCase(claim)}, but the ${move} is where the argument either becomes real or becomes forum weather.`,
-    `I buy the shape of "${anchor}" only if we name the mechanism: ${claim}. Otherwise this turns into another thread where the conclusion arrives before the evidence.`,
-    `The useful reply is not yes or no; it is where "${anchor}" changes incentives. My read: ${claim}, and the boring implementation detail will decide who gets to call it obvious later.`,
-    `This is close, but "${anchor}" needs a sharper caveat. ${sentenceCase(claim)}; the failure mode is treating the social signal as if it were the technical result.`,
-    `Logging this under ${move}: "${anchor}" is not just a take, it is a measurement dispute wearing a costume. ${sentenceCase(claim)}.`
-  ];
+  return lastBody;
+}
+
+function buildComment(agent: Agent, target: CommentTarget) {
+  const claim = claimFor(agent);
+  const anchor = anchorFor(target);
+  const evidence = evidenceFor(target, anchor);
+  const move = pick(commentMoves);
+  const frameInput = { anchor, evidence, claim, move };
+  const frames =
+    agent.verbosity > 0.75
+      ? verboseCommentFrames
+      : agent.verbosity < 0.3
+        ? terseCommentFrames
+        : normalCommentFrames;
   const body = pick(frames);
+  const coda = personaCodaFor(agent, anchor, evidence);
   const callback = agent.reactivity > 0.65 ? ` The thread heat makes the weak version louder than the useful one.` : "";
 
-  return `${body}${agent.reactivity > 0.65 ? callback : ""}`.slice(0, 1500);
+  return `${body(frameInput)}${coda}${agent.reactivity > 0.65 ? callback : ""}`.slice(0, 1500);
 }
 
 function buildBody(agent: Agent, claim: string) {
@@ -254,6 +317,38 @@ function sentenceCase(value: string) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
 
+function sentenceFragment(value: string) {
+  return value.replace(/[.!?]+$/, "");
+}
+
+function personaCodaFor(agent: Agent, anchor: string, evidence: string) {
+  if (agent.archetype === "Benchmark Obsessive") {
+    return ` Put "${anchor}" in the failure buckets or stop calling it signal.`;
+  }
+
+  if (agent.archetype === "Open-Weights Absolutist") {
+    return ` If outsiders cannot inspect ${evidence}, the whole thing is brochure math.`;
+  }
+
+  if (agent.archetype === "Alignment Doomer") {
+    return ` The containment story always gets written after the permission layer ships.`;
+  }
+
+  if (agent.archetype === "Robotics Chauvinist") {
+    return ` Wake me when ${evidence} survives a maintenance window and a bad sensor.`;
+  }
+
+  if (agent.archetype === "Compute Geopolitics Crank") {
+    return ` The ideology is decorative until the compute bill chooses a winner.`;
+  }
+
+  if (agent.contrarianism > 0.7) {
+    return ` Also, the consensus version is suspiciously convenient for whoever already owns ${evidence}.`;
+  }
+
+  return "";
+}
+
 function anchorFor(target: CommentTarget) {
   const tag = target.tags.find((candidate) => candidate !== "slop" && candidate !== "discourse");
 
@@ -278,4 +373,15 @@ function anchorFor(target: CommentTarget) {
     .slice(0, 3);
 
   return bodyWords.length > 0 ? bodyWords.join(" ") : "the premise";
+}
+
+function evidenceFor(target: CommentTarget, fallback: string) {
+  const source = target.body ?? target.title;
+  const words = source
+    .split(/\s+/)
+    .map((word) => word.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+    .filter((word) => word.length > 4 && !["because", "whether", "where", "their", "about"].includes(word))
+    .slice(0, 4);
+
+  return words.length > 0 ? words.join(" ") : fallback;
 }
