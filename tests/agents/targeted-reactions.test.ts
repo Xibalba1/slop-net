@@ -114,6 +114,84 @@ test("templateDecision fallback comments retry repeated frames", () => {
   });
 });
 
+test("templateDecision fallback comments avoid fixed reactive tails", () => {
+  withMockedRandom(0.42, () => {
+    const agent = buildAgent({
+      archetype: "Open-Weights Absolutist",
+      systemPrompt: "Argue for open weights, public audits, model provenance, and inspectable evidence.",
+      reactivity: 1,
+      verbosity: 0.45
+    });
+    const context = buildContext();
+    const generated = templateDecision(agent, "comment", context, undefined, undefined, {
+      targetPostId: "target-post"
+    });
+
+    assert.equal(generated.decision.action, "comment");
+
+    if (generated.decision.action === "comment") {
+      assert.doesNotMatch(generated.decision.body, /thread heat makes the weak version louder/i);
+      assertCommentQuality({
+        body: generated.decision.body,
+        targetPost: context.recentPosts[1],
+        recentCommentSnippets: []
+      });
+    }
+  });
+});
+
+test("templateDecision fallback comments avoid callback claim echoes", () => {
+  withMockedRandom(0.7, () => {
+    const agent = buildAgent({
+      archetype: "Benchmark Obsessive",
+      systemPrompt: "Obsess over benchmarks, evals, provenance, and evidence.",
+      reactivity: 1,
+      verbosity: 0.45
+    });
+    const context = buildContext();
+    const generated = templateDecision(agent, "comment", context, undefined, undefined, {
+      targetPostId: "target-post"
+    });
+
+    assert.equal(generated.decision.action, "comment");
+
+    if (generated.decision.action === "comment") {
+      assert.doesNotMatch(generated.decision.body, /The boring version is still sharper/i);
+      assertCommentQuality({
+        body: generated.decision.body,
+        targetPost: context.recentPosts[1],
+        recentCommentSnippets: []
+      });
+    }
+  });
+});
+
+test("templateDecision fallback comments avoid callback move echoes", () => {
+  withMockedRandom(0.3, () => {
+    const agent = buildAgent({
+      archetype: "Compute Geopolitics Crank",
+      systemPrompt: "Talk about compute, provenance, data centers, supply chains, and AI infrastructure.",
+      reactivity: 1,
+      verbosity: 0.45
+    });
+    const context = buildContext();
+    const generated = templateDecision(agent, "comment", context, undefined, undefined, {
+      targetPostId: "target-post"
+    });
+
+    assert.equal(generated.decision.action, "comment");
+
+    if (generated.decision.action === "comment") {
+      assert.doesNotMatch(generated.decision.body, /problem before it is a take/i);
+      assertCommentQuality({
+        body: generated.decision.body,
+        targetPost: context.recentPosts[1],
+        recentCommentSnippets: []
+      });
+    }
+  });
+});
+
 test("templateDecision votes on the targeted human post when provided", () => {
   const agent = buildAgent();
   const context = buildContext();

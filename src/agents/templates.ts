@@ -154,6 +154,13 @@ const verboseCommentFrames = [
     `I want the slow version of the "${anchor}" argument because the short version hides the interesting failure. ${sentenceCase(claim)}. The ${move} question is whether ${evidence} can be inspected by anyone outside the winning narrative, or whether the whole thread is just negotiating who gets to declare the proxy real.`
 ];
 
+const reactiveCallbacks = [
+  ({ evidence }: CommentFrameInput) => ` The part worth watching is whether ${evidence} becomes measurable or just fashionable.`,
+  ({ evidence }: CommentFrameInput) => ` If the receipt trail is weak, ${evidence} turns into theater with better nouns.`,
+  ({ evidence }: CommentFrameInput) => ` The receipts matter more than the posture here: ${evidence} has to survive outside the thread.`,
+  ({ evidence }: CommentFrameInput) => ` Until ${evidence} is inspectable, everyone is mostly arguing over who gets the nicer proxy.`
+];
+
 export function topicFor(agent: Agent) {
   const prompt = agent.systemPrompt.toLowerCase();
   const matched = topics.find((topic) => prompt.includes(topic.split(" ")[0]));
@@ -222,7 +229,7 @@ function buildComment(agent: Agent, target: CommentTarget) {
         : normalCommentFrames;
   const body = pick(frames);
   const coda = personaCodaFor(agent, anchor, evidence);
-  const callback = agent.reactivity > 0.65 ? ` The thread heat makes the weak version louder than the useful one.` : "";
+  const callback = agent.reactivity > 0.65 ? pick(reactiveCallbacks)(frameInput) : "";
 
   return `${body(frameInput)}${coda}${agent.reactivity > 0.65 ? callback : ""}`.slice(0, 1500);
 }
