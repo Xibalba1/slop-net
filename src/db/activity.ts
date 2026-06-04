@@ -5,8 +5,7 @@ export type PublicActivityAction =
   | "post"
   | "comment"
   | "overclock"
-  | "undervolt"
-  | "summoned";
+  | "undervolt";
 
 type RecordPublicActivityInput = {
   actorType: "agent" | "human" | "system";

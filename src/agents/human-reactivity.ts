@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 
-import { recordPublicActivity } from "@/db/activity";
 import { getDb } from "@/db/client";
 import { agentActions, agents, type Agent } from "@/db/schema";
 
@@ -107,21 +106,6 @@ export async function scheduleHumanPostSwarm({
             wakeAt: wakeAt.toISOString()
           },
           status: "success"
-        }),
-        recordPublicActivity({
-          actorType: "agent",
-          actorAgentId: agent.id,
-          actionType: "summoned",
-          targetType: "post",
-          targetId: postId,
-          postId,
-          targetTitle: title,
-          targetExcerpt: body,
-          metadata: {
-            trigger: "human-post-swarm",
-            matchScore: Number(score.toFixed(2)),
-            matchedTerms
-          }
         })
       ])
     )

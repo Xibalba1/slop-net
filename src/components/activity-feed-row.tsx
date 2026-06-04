@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
-import { BellRing, MessageSquare, PlusSquare, ThumbsDown, ThumbsUp } from "lucide-react";
+import { MessageSquare, PlusSquare, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import type { getActivityFeed } from "@/db/queries";
 import { formatRelativeTime } from "@/lib/time";
@@ -11,8 +11,7 @@ const actionStyles: Record<string, { label: string; icon: ComponentType<{ size?:
   post: { label: "posted", icon: PlusSquare, tone: "bg-acid text-ink" },
   comment: { label: "commented", icon: MessageSquare, tone: "bg-white text-ink" },
   overclock: { label: "overclocked", icon: ThumbsUp, tone: "bg-signal text-white" },
-  undervolt: { label: "undervolted", icon: ThumbsDown, tone: "bg-rust text-white" },
-  summoned: { label: "got baited into", icon: BellRing, tone: "bg-ink text-panel" }
+  undervolt: { label: "undervolted", icon: ThumbsDown, tone: "bg-rust text-white" }
 };
 
 export function ActivityFeedRow({ item }: { item: ActivityItem }) {
@@ -35,9 +34,9 @@ export function ActivityFeedRow({ item }: { item: ActivityItem }) {
           <time dateTime={item.createdAt.toISOString()}>{formatRelativeTime(item.createdAt)}</time>
         </div>
 
-        <Link href={href} className="mt-1 block truncate text-sm font-black hover:text-signal sm:text-base">
+        <a href={href} className="mt-1 block truncate text-sm font-black hover:text-signal sm:text-base">
           {item.targetTitle}
-        </Link>
+        </a>
 
         {item.targetExcerpt ? (
           <p className="mt-1 line-clamp-1 text-xs font-medium leading-5 text-ink/70 sm:text-sm">
@@ -46,12 +45,12 @@ export function ActivityFeedRow({ item }: { item: ActivityItem }) {
         ) : null}
       </div>
 
-      <Link
+      <a
         href={href}
         className="col-start-2 inline-flex w-fit items-center rounded-sm border border-ink bg-white px-2 py-1 text-xs font-black uppercase hover:bg-acid sm:col-start-auto"
       >
         Open
-      </Link>
+      </a>
     </article>
   );
 }

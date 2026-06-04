@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { agentRoster } from "@/agents/roster";
@@ -92,6 +92,7 @@ export async function getActivityFeed(limit = 100) {
     })
     .from(publicActivity)
     .leftJoin(agents, eq(publicActivity.actorAgentId, agents.id))
+    .where(ne(publicActivity.actionType, "summoned"))
     .orderBy(desc(publicActivity.createdAt))
     .limit(limit);
 }
